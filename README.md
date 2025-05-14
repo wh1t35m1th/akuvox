@@ -185,11 +185,11 @@ Or:
 
 ## Adding the Akuvox Integration
 
-1. Click this button: <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=akuvox" rel="nofollow" target="_blank"><img src="https://camo.githubusercontent.com/637fd24a458765d763a6dced4b312c503f54397bdd9b683584ef8054f305cd7f/68747470733a2f2f6d792e686f6d652d617373697374616e742e696f2f6261646765732f636f6e6669675f666c6f775f73746172742e737667" alt="Open your Home Assistant instance and start setting up a new integration." data-canonical-src="https://my.home-assistant.io/badges/config_flow_start.svg" style="max-width: 100%;"></a> to add the integration.
+1. Click this button: <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=akuvox" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/config_flow_start.svg" alt="Open your Home Assistant instance and start setting up a new integration." /></a> to add the integration.
 
-2. Click `OPEN LINK`
+4. Click `OPEN LINK`
 
-3. Click `OK`:
+5. Click `OK`:
 
 <img src="https://user-images.githubusercontent.com/1849295/269954970-15b480b7-6e41-4be3-966b-451143ab21a1.png" width="400">
 
@@ -200,7 +200,7 @@ Or:
 
 ### Method 1: SMS Verification (Recommended)
 
-Sigining in via SMS verification will sign you out from the SmartPlus app on your device. If you wish to stay signed in on the app and also use the integration in Home Assistant please use the [App Tokens](#method-2-app-tokens-advanced) sign in method.
+Sigining in via SMS verification will sign you out from the SmartPlus app on your device. If you wish to stay signed in on the app and also use the integration in Home Assistant please use the [App Tokens](#method-2-app-tokens-advanced) sign in method below.
 
 1. Select `Continue sign-in with SMS Verification` and click `NEXT`
 
@@ -219,7 +219,7 @@ Sigining in via SMS verification will sign you out from the SmartPlus app on you
 
 Sigining in using your SmartLife app tokens will allow you to remain signed in to the SmartLife app on your device.
 
-1. Obtain your `auth_token` and `token` values (for help with finding your tokens, please refer to the [Finding you SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below).
+1. Obtain your `auth_token` and `token` values (see the [Finding you SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below).
 
 1. Enter your phone number, `auth_token` and `token` values and click `SUBMIT`:
 <img src="https://user-images.githubusercontent.com/1849295/269958871-071008db-c2d8-4455-a612-eb0a9721ea39.png" width="400">
@@ -249,9 +249,8 @@ To obtain your SmartPlus account tokens you can use an HTTP proxy (such as [mitm
 
 2. Log out from your SmartPlus app, and then log in with your phone number and SMS code
 
-3. Search for `akuvox`, and you should see the `servers_list` request. Click on it and in the `Requests` tab you should find your `auth_token` and `token` values:
+3. Search for the `sms_login` request. Select it and click on the `Response` tab. Set the View to `JSON`.
 
-__NOTE: If you see `passwd` instead of `auth_token`, please use the `passwd` value as your `auth_token`.__
+    You should find your `auth_token` and `token` values:
 
-![mitmproxy](https://github.com/nimroddolev/akuvox/assets/1849295/d7d2b7ba-cc0e-4f64-b62b-43850bbc90c1)
-
+![instructions](https://github.com/user-attachments/assets/c1550332-4499-48f0-a55e-34dea410e558)
