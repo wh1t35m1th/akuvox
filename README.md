@@ -162,7 +162,7 @@ The easiest way to install Akuvox is though [HACS (the Home Assistant Community 
 
 1. If you don't have HACS installed yet, follow the [official installation guide](https://hacs.xyz/docs/installation/manual).
 
-2. Add the Akuvox SmartPlus repository to HACS by clicking here: <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=nimroddolev&repository=akuvox&category=integration" title="Akuvox HACS repository" target="_blank"><img loading="lazy" src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
+2. Add the Akuvox SmartPlus repository to HACS by clicking here: <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=jul-sh&repository=akuvox&category=integration" title="Akuvox HACS repository" target="_blank"><img loading="lazy" src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
 
 3. Click `ADD`:
 
@@ -254,3 +254,4 @@ To obtain your SmartPlus account tokens you can use an HTTP proxy (such as [mitm
     You should find your `auth_token` and `token` values:
 
 ![instructions](https://github.com/user-attachments/assets/c1550332-4499-48f0-a55e-34dea410e558)
+
