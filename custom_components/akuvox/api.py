@@ -8,6 +8,7 @@ import json
 from homeassistant.core import HomeAssistant
 
 import aiohttp
+import httpx
 import async_timeout
 import requests
 
@@ -224,20 +225,20 @@ class AkuvoxApiClient:
             return False
 
 
-        url = f"https://{REST_SERVER_ADDR}:{REST_SERVER_PORT}/{API_SERVERS_LIST}"
+        url = f"https://gate.scloud.akuvox.com:{REST_SERVER_PORT}/{API_SERVERS_LIST}"
         headers = {
             "accept": "*/*",
             "content-type": "application/json",
             "x-auth-token": token,
-            "api-version": "6.6",
+            "api-version": "6.8",
             "x-cloud-lang": "en",
-            "user-agent": "VBell/6.61.2 (iPhone; iOS 16.6; Scale/3.00)",
-            "accept-language": "en-AU;q=1, he-AU;q=0.9, ru-RU;q=0.8"
+            "user-agent": "VBell/7.20.5 (iPhone; iOS 26.1; Scale/2.00)",
+            "accept-language": "en-SG;q=1"
         }
         obfuscated_number = str(self.get_obfuscated_phone_number(phone_number))
         data = json.dumps({
-            "auth_token": auth_token,
-            "passwd": auth_token,
+#            "auth_token": auth_token,
+#            "passwd": auth_token,
             "token": token,
             "user": obfuscated_number,
         })
@@ -339,26 +340,35 @@ class AkuvoxApiClient:
             return False
         
         LOGGER.debug("📡 Refreshing authentication tokens...")
-        url = f"https://{REST_SERVER_ADDR}:{REST_SERVER_PORT}/{API_REFRESH_TOKEN}"
+        url = f"https://gate.scloud.akuvox.com:{REST_SERVER_PORT}/{API_REFRESH_TOKEN}"
         
         headers = {
             "x-auth-token": self._data.token,
-            "user-agent": "VBell/7.12.2 (iPhone; iOS 18.5; Scale/2.00)",
+            "user-agent": "VBell/7.20.5 (iPhone; iOS 26.1; Scale/2.00)",
             "content-type": "application/json",
             "accept": "*/*",
-            "accept-language": "en-US,en;q=0.9"
+            "accept-language": "en-US,en;q=0.9",
+            "api-version": "6.8",
         }
         
         data = json.dumps({
             "refresh_token": self._data.refresh_token
         })
-        
+
+        LOGGER.debug("🔸 Sending refresh token request to %s", url)
+        LOGGER.debug("🔸 Headers being sent:")
+        for k, v in headers.items():
+            LOGGER.debug("   %s: %s", k, v)
+        LOGGER.debug("🔸 Request body: %s", data)
+
         json_data = await self._async_api_wrapper(
             method="post",
             url=url,
             headers=headers,
             data=data
         )
+
+        LOGGER.debug("🔸 json_data (raw): %s", json_data)
         
         if json_data is not None:
             if "err_code" in json_data and json_data["err_code"] == "0":
@@ -384,8 +394,9 @@ class AkuvoxApiClient:
                     # Store updated tokens
                     await self._data.async_set_stored_data_for_key("token", self._data.token)
                     await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
-                    await self._data.async_set_stored_data_for_key("last_token_refresh", 
-                                                                  int(asyncio.get_event_loop().time()))
+                    await self._data.async_set_stored_data_for_key(
+                        "last_token_refresh", int(asyncio.get_event_loop().time())
+                    )
                     
                     return True
                 
@@ -419,15 +430,15 @@ class AkuvoxApiClient:
         LOGGER.error("❌ Unable to retrieve user's device list.")
         return None
 
-    def make_opendoor_request(self, name: str, host: str, token: str, data: str):
+    def make_opendoor_request(self, name: str, host: str, data: str):
         """Request the user's configuration data."""
         LOGGER.debug("📡 Sending request to open door '%s'...", name)
         LOGGER.debug("Request data = %s", str(data))
-        url = f"https://{host}/{API_OPENDOOR}?token={token}"
+        url = f"https://{host}/{API_OPENDOOR}?token={self._data.token}"
         headers = {
             "Host": host,
             "Content-Type": "application/x-www-form-urlencoded",
-            "X-AUTH-TOKEN": token,
+            "X-AUTH-TOKEN": self._data.token,
             "api-version": OPENDOOR_API_VERSION,
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
@@ -437,6 +448,7 @@ class AkuvoxApiClient:
             "Content-Length": "24",
             "x-cloud-lang": "en",
         }
+        LOGGER.debug("🔑 Using token for door open: %s", self._data.token)
         response = self.post_request(url=url, headers=headers, data=data)
         json_data = self.process_response(response, url)
         if json_data is not None:
@@ -616,8 +628,12 @@ class AkuvoxApiClient:
                             return json_data["data"]
                         return json_data
                     return []
-
+                
+                # Refresh token or newer API pattern
+                if "err_code" in json_data and str(json_data["err_code"]) == "0":
+                    return json_data
                 LOGGER.warning("🤨 Response: %s", str(json_data))
+                
             except Exception as error:
                 LOGGER.error("❌ Error occurred when parsing JSON: %s\nRequest: %s",
                              error,

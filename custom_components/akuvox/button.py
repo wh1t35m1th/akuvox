@@ -92,7 +92,6 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
         self._client.make_opendoor_request(
             name=self._name,
             host=self._host,
-            token=self._token,
             data=self._data
         )
 
