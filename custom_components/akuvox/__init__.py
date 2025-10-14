@@ -28,15 +28,18 @@ PLATFORMS: list[Platform] = [
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up this integration using UI."""
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = coordinator = AkuvoxDataUpdateCoordinator(
+
+    # Create coordinator + API client only once per entry
+    api_client = AkuvoxApiClient(
+        session=async_get_clientsession(hass),
         hass=hass,
-        client=AkuvoxApiClient(
-            session=async_get_clientsession(hass),
-            hass=hass,
-            entry=entry,
-        ),
+        entry=entry,
     )
-    await async_update_configuration(hass=hass, entry=entry)
+
+    coordinator = AkuvoxDataUpdateCoordinator(hass=hass, client=api_client)
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    await async_update_configuration(hass=hass, entry=entry, log_values=True)
 
     # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
     await coordinator.async_config_entry_first_refresh()
@@ -101,7 +104,7 @@ async def async_options_updated(self, entry: ConfigEntry):
 
 # Update
 
-async def async_update_configuration(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_update_configuration(hass: HomeAssistant, entry: ConfigEntry, log_values: bool = False) -> None:
     """Update stored values from configuration."""
     try:
         if entry.options:
@@ -114,21 +117,25 @@ async def async_update_configuration(hass: HomeAssistant, entry: ConfigEntry) ->
             coordinator: AkuvoxDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
             client: AkuvoxApiClient = coordinator.client
 
-            LOGGER.debug("Configured values:")
-            for key, value in updated_options.items():
-                #                           value=value)
-                if value:
-                    client.update_data(key, value)
-                    str_value: str = str(value)
-                    if key in ["auth_token", "token"]:
-                        length: int = len(str_value)
-                        str_value = f"{str_value[0:3]}{'*'*int(length-6)}{str_value[int(length-3):length]}" # type: ignore
-                    LOGGER.debug(" - %s = %s", key, str_value)
+            if log_values:
+                LOGGER.debug("Configured values (full token logging for debug):")
+                for key, value in updated_options.items():
+                    if value:
+                        client.update_data(key, value)
+                        # For debugging, print full token values
+                        if key in ["auth_token", "token", "refresh_token"]:
+                            LOGGER.debug(" - %s = %s", key, value)
+                        else:
+                            LOGGER.debug(" - %s = %s", key, value)
+            else:
+                for key, value in updated_options.items():
+                    if value:
+                        client.update_data(key, value)
+
     except Exception as error:
         LOGGER.warning("Unable to update configuration: %s", str(error))
 
 # Services
-
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for the Akuvox integration."""
     
@@ -215,4 +222,3 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         async_refresh_tokens_service,
         schema=None
     )
-

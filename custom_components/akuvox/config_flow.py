@@ -397,7 +397,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Initialize the options flow."""
-        # Define the options schema
+        # Get current config and options
         config_options = dict(self.config_entry.options)
         config_data = dict(self.config_entry.data)
 
@@ -406,51 +406,53 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             "wait": "Wait for camera screenshot URLs to become available before triggering the event (typically adds a delay of 0-3 seconds)."
         }
 
-        default_country_name_code = helpers.find_country_name_code(config_data.get('country_code', self.hass.config.country))
-        default_country_name = LOCATIONS_DICT.get(default_country_name_code, {}).get("country") # type: ignore
-        default_subdomain = LOCATIONS_DICT.get(default_country_name_code, {}).get("subdomain") # type: ignore
+        # Updated logic for default_country_name to handle both country names and numeric codes
+        stored_country = config_options.get("country_code") or config_data.get("country_code")
+
+        # Determine what to display
+        if stored_country in [v.get("country") for v in LOCATIONS_DICT.values()]:
+            # It’s already a full country name (e.g., "Singapore")
+            default_country_name = stored_country
+        else:
+            # Convert from numeric code or ISO format
+            default_country_name_code = helpers.find_country_name_code(str(stored_country or self.hass.config.country))
+            default_country_name = LOCATIONS_DICT.get(default_country_name_code, {}).get("country", "")
+
+        # Subdomain and country names list
+        default_subdomain = config_options.get("subdomain") or config_data.get("subdomain") or helpers.get_subdomain_from_country_code(stored_country or self.hass.config.country)
         subdomain_list = list(SUBDOMAINS_LIST)
-        del subdomain_list[0]
-        current_subdomain = self.get_data_key_value("subdomain") or default_subdomain
+        if "Default" in subdomain_list:
+            subdomain_list.remove("Default")
 
-        country_names_list:list = []
-        for _country, country_dict in LOCATIONS_DICT.items():
-            country_names_list.append(country_dict.get("country"))
+        country_names_list = [v.get("country") for k, v in LOCATIONS_DICT.items()]
 
+        # Build schema
         options_schema = vol.Schema({
-            vol.Optional("country",
-                         default=default_country_name,
-                         description="Your country code"):
-                         selector.SelectSelector(
-                             selector.SelectSelectorConfig(
-                                 options=country_names_list,
-                                 mode=selector.SelectSelectorMode.DROPDOWN,
-                                 custom_value=False),
-                                 ),
-            vol.Optional("auth_token",
-                         default=self.get_data_key_value("auth_token", False) # type: ignore
-            ): str,
-            vol.Optional("token",
-                         default=self.get_data_key_value("token", False) # type: ignore
-            ): str,
-            vol.Optional("refresh_token",
-                         default=self.get_data_key_value("refresh_token", False) # type: ignore
-            ): str,
-            vol.Optional("subdomain",
-                default=current_subdomain, # type: ignore
-                description="Manually set the regional API subdomain"):
+            vol.Optional("country_code", default=default_country_name):
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=country_names_list,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        custom_value=False
+                    )
+                ),
+            vol.Optional("phone_number", default=self.get_data_key_value("phone_number", "")): str,
+            vol.Optional("auth_token", default=self.get_data_key_value("auth_token", "")): str,
+            vol.Optional("refresh_token", default=self.get_data_key_value("refresh_token", "")): str,
+            vol.Optional("token", default=self.get_data_key_value("token", "")): str,
+            vol.Optional("subdomain", default=default_subdomain):
                 selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=subdomain_list,
                         mode=selector.SelectSelectorMode.DROPDOWN,
-                        custom_value=True),
-                        ),
-            vol.Required("event_screenshot_options",
-                         default=self.get_data_key_value("event_screenshot_options", "asap") # type: ignore
-            ): vol.In(event_screenshot_options),
+                        custom_value=True
+                    )
+                ),
+            vol.Required("event_screenshot_options", default=self.get_data_key_value("event_screenshot_options", "asap")):
+                vol.In(event_screenshot_options),
         })
 
-        # Show the form with the current options
+        # Show form
         if user_input is None:
             return self.async_show_form(
                 step_id="init",
@@ -459,92 +461,40 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 last_step=True
             )
 
-        wait_for_image_url = True if user_input.get("event_screenshot_options", "asap") == "wait" else False
+        # Validate tokens
+        api_client: AkuvoxApiClient = None
+        for _k, v in self.hass.data[DOMAIN].items():
+            coordinator = v
+            api_client = coordinator.client
+        if api_client is not None:
+            api_client._data.subdomain = user_input.get("subdomain", default_subdomain)
+            api_client._data.auth_token = user_input.get("auth_token", "")
+            api_client._data.token = user_input.get("token", "")
+            api_client._data.phone_number = user_input.get("phone_number", "")
+            try:
+                valid = await api_client.async_retrieve_user_data_with_tokens(
+                    user_input.get("auth_token", ""),
+                    user_input.get("token", "")
+                )
+                if not valid:
+                    errors = {"token": "Unable to validate tokens. Check your auth_token and token."}
+                    return self.async_show_form(
+                        step_id="init",
+                        data_schema=options_schema,
+                        errors=errors
+                    )
+            except Exception as e:
+                errors = {"token": f"Error validating tokens: {e}"}
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=options_schema,
+                    errors=errors
+                )
 
-        # API client
-        if self.akuvox_api_client is None:
-            coordinator: AkuvoxDataUpdateCoordinator
-            for _key, value in self.hass.data[DOMAIN].items():
-                coordinator = value
-            self.akuvox_api_client = coordinator.client
-            self.akuvox_api_client._data.subdomain = current_subdomain # type: ignore
-            self.akuvox_api_client._data.host = self.get_data_key_value("host") # type: ignore
-            self.akuvox_api_client._data.auth_token = self.get_data_key_value("auth_token") # type: ignore
-            self.akuvox_api_client._data.token = self.get_data_key_value("token") # type: ignore
-            self.akuvox_api_client._data.phone_number = self.get_data_key_value("phone_number") # type: ignore
-            self.akuvox_api_client._data.wait_for_image_url = self.get_data_key_value("wait_for_image_url") # type: ignore
-
-        errors = {}
-
-        # User wishes to use other SmartLife account tokens
-        if user_input.get("override", False) is True:
-            LOGGER.debug("Use custom token strings...")
-            if await self.akuvox_api_client.async_init_api() is True:
-
-                # Retrieve device data
-                await self.akuvox_api_client.async_retrieve_user_data_with_tokens(
-                    user_input["auth_token"],
-                    user_input["token"])
-                devices_json = self.akuvox_api_client.get_devices_json()
-                if devices_json is not None and all(key in devices_json for key in (
-                    "camera_data",
-                    "door_relay_data",
-                    "door_keys_data")
-                ):
-                    camera_data = devices_json["camera_data"]
-                    door_relay_data = devices_json["door_relay_data"]
-                    door_keys_data = devices_json["door_keys_data"]
-                    options_schema = vol.Schema({
-                        vol.Required("token", default=config_options.get("token", None)): str,
-                        vol.Optional("camera_data", default=camera_data): dict,
-                        vol.Optional("door_relay_data", default=door_relay_data): dict,
-                        vol.Optional("door_keys_data", default=door_keys_data): dict,
-                    })
-                else:
-                    errors["token"] = "Unable to receive device list. Check your token."
-            else:
-                errors["bad_tokens"] = "Unable to initialize API. Did you login again from your device? Try logging in/adding tokens again."
-
-            data_schema = {
-                vol.Optional(
-                    "auth_token",
-                    msg=None,
-                    default=user_input.get("auth_token", ""),
-                    description="Your SmartPlus user's auth_token."
-                ): str,
-                vol.Optional(
-                    "token",
-                    msg=None,
-                    default=user_input.get("token", ""),
-                    description="Your SmartPlus user's token."
-                ): str,
-                vol.Optional("subdomain",
-                    default="Default", # type: ignore
-                    description="Manually set the regional API subdomain"):
-                    selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=SUBDOMAINS_LIST,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            custom_value=True),
-                            ),
-                vol.Required(
-                    "wait_for_image_url",
-                    msg=None,
-                    default=bool(wait_for_image_url) # type: ignore
-                ): bool
-            }
-            return self.async_show_form(
-                step_id="init",
-                data_schema=vol.Schema(data_schema),
-                errors=errors
-            )
-
-        # User input is valid, update the options
-        LOGGER.debug("Updating configuration...")
-        # user_input = None
+        # All good, create entry
         return self.async_create_entry(
-            data=user_input, # type: ignore
-            title="",
+            data=user_input,
+            title=""
         )
 
     def get_data_key_value(self, key, placeholder=None):

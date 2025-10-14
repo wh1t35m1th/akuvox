@@ -1,7 +1,7 @@
 """Helper functions."""
 
 from .const import (
-    # LOGGER,
+    LOGGER,
     COUNTRY_PHONE,
     LOCATIONS_DICT
 )
@@ -18,6 +18,7 @@ class AkuvoxHelpers:
 
     def get_location_dict(self, country_code):
         """User's location dict."""
+        LOGGER.debug(f"🔍 [AkuvoxHelpers] get_location_dict called with country_code: {country_code}")
         default_dict = {
             "country": "Unknown",
             "phone_number": "Unknown",
@@ -26,9 +27,12 @@ class AkuvoxHelpers:
         }
         if country_code and len(country_code) > 0 and country_code != "-1":
             country_name = self.find_country_name_code(country_code)
+            LOGGER.debug(f"🔎 [AkuvoxHelpers] find_country_name_code result: {country_name}")
             if country_name:
                 location_dict = LOCATIONS_DICT.get(str(country_name), default_dict)
+                LOGGER.debug(f"📍 [AkuvoxHelpers] Returning location_dict: {location_dict}")
                 return location_dict
+        LOGGER.debug(f"📍 [AkuvoxHelpers] Returning default_dict: {default_dict}")
         return default_dict
 
     def find_country_name_code(self, country_phone_number):

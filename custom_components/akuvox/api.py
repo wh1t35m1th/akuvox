@@ -78,6 +78,7 @@ class AkuvoxApiClient:
             if stored_refresh_token:
                 self._data.refresh_token = stored_refresh_token
                 LOGGER.debug("📱 Loaded refresh token from storage")
+                LOGGER.debug("🔐 Loaded refresh_token from storage: %s", stored_refresh_token)
 
         # Check and refresh tokens if needed
         if self._data.refresh_token:
@@ -93,7 +94,6 @@ class AkuvoxApiClient:
                 if await self.async_make_servers_list_request(
                     hass=self.hass,
                     auth_token=self._data.auth_token,
-                    token=self._data.token,
                     country_code=self.hass.config.country,
                     phone_number=self._data.phone_number) is False:
                     LOGGER.error("❌ API request for servers list failed.")
@@ -209,7 +209,6 @@ class AkuvoxApiClient:
     async def async_make_servers_list_request(self,
                                               hass: HomeAssistant,
                                               auth_token: str,
-                                              token: str,
                                               country_code,
                                               phone_number: str,
                                               subdomain: str = "") -> bool:
@@ -218,18 +217,18 @@ class AkuvoxApiClient:
             hass=hass,
             subdomain=subdomain,
             auth_token=auth_token,
-            token=token,
+            token=self._data.token,
             country_code=country_code,
             phone_number=phone_number)
         if await self.async_init_api() is False:
             return False
 
-
-        url = f"https://gate.scloud.akuvox.com:{REST_SERVER_PORT}/{API_SERVERS_LIST}"
+        # Always use the dynamic subdomain for the servers list URL
+        url = f"https://gate.{self._data.subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_SERVERS_LIST}"
         headers = {
             "accept": "*/*",
             "content-type": "application/json",
-            "x-auth-token": token,
+            "x-auth-token": self._data.token,
             "api-version": "6.8",
             "x-cloud-lang": "en",
             "user-agent": "VBell/7.20.5 (iPhone; iOS 26.1; Scale/2.00)",
@@ -237,11 +236,13 @@ class AkuvoxApiClient:
         }
         obfuscated_number = str(self.get_obfuscated_phone_number(phone_number))
         data = json.dumps({
-#            "auth_token": auth_token,
-#            "passwd": auth_token,
-            "token": token,
+            "token": self._data.token,
             "user": obfuscated_number,
         })
+
+        # DEBUG: show which token is being used for server list
+        LOGGER.debug("🔑 Using token for server list request: %s", self._data.token)
+
         LOGGER.debug("📡 Requesting server list...")
         json_data = await self._async_api_wrapper(
             method="post",
@@ -311,7 +312,6 @@ class AkuvoxApiClient:
         if await self.async_make_servers_list_request(
             hass=self.hass,
             auth_token=self._data.auth_token,
-            token=self._data.token,
             country_code=self.hass.config.country,
             phone_number=self._data.phone_number):
             await self.async_retrieve_device_data()
@@ -340,7 +340,7 @@ class AkuvoxApiClient:
             return False
         
         LOGGER.debug("📡 Refreshing authentication tokens...")
-        url = f"https://gate.scloud.akuvox.com:{REST_SERVER_PORT}/{API_REFRESH_TOKEN}"
+        url = f"https://gate.{self._data.subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_REFRESH_TOKEN}"
         
         headers = {
             "x-auth-token": self._data.token,
@@ -397,7 +397,16 @@ class AkuvoxApiClient:
                     await self._data.async_set_stored_data_for_key(
                         "last_token_refresh", int(asyncio.get_event_loop().time())
                     )
-                    
+
+                    LOGGER.debug("💾 Stored new token pair to persistent storage:")
+                    LOGGER.debug("   token = %s", self._data.token)
+                    LOGGER.debug("   refresh_token = %s", self._data.refresh_token)
+
+                    # Optional confirmation of saved values
+                    confirm_token = await self._data.async_get_stored_data_for_key("token")
+                    confirm_refresh = await self._data.async_get_stored_data_for_key("refresh_token")
+                    LOGGER.debug("🔍 Confirmed saved tokens in storage: token=%s | refresh_token=%s", confirm_token, confirm_refresh)
+
                     return True
                 
             LOGGER.error("❌ Token refresh failed: %s", json_data.get("message", "Unknown error"))
@@ -550,6 +559,12 @@ class AkuvoxApiClient:
 
         if json_data is not None and len(json_data) > 0:
             return json_data
+
+        # DEBUG block before error log
+        if json_data is None:
+            LOGGER.debug("🧩 personal_door_log debug: Response is None. Token=%s | URL=%s", self._data.token, url)
+        else:
+            LOGGER.debug("🧩 personal_door_log debug: Received response = %s", json_data)
 
         LOGGER.error("❌ Unable to retrieve user's personal door log")
         return None
