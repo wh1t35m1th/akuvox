@@ -48,7 +48,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not await api_client.async_make_servers_list_request(
             hass=hass,
             auth_token=api_client._data.auth_token,
-            token=api_client._data.token,
             country_code=getattr(api_client._data, "country_code", ""),
             phone_number=getattr(api_client._data, "phone_number", ""),
         ):
