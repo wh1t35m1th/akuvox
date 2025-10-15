@@ -39,6 +39,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = AkuvoxDataUpdateCoordinator(hass=hass, client=api_client)
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
+    # Ensure persistent token data is fully loaded before configuration update
+    try:
+        LOGGER.debug("🔄 Loading stored Akuvox tokens before configuration update...")
+        await api_client._data.async_load_stored_data()
+        LOGGER.debug("✅ Stored tokens loaded successfully before config initialization.")
+    except Exception as e:
+        LOGGER.warning("⚠️ Failed to load stored token data before configuration: %s", e)
+
     await async_update_configuration(hass=hass, entry=entry, log_values=True)
 
     # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
