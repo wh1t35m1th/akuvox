@@ -50,24 +50,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_update_configuration(hass=hass, entry=entry, log_values=True)
 
     # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
-    # 🧠 Validate token on startup - if token fails, try refreshing automatically
+    # 🧠 Validate or refresh token on startup (refresh first, then validate)
+    LOGGER.debug("🔍 Performing startup token check...")
+
+    refreshed = False
     try:
-        LOGGER.debug("🔍 Performing startup server list validation...")
+        LOGGER.debug("🔄 Attempting to refresh tokens on startup...")
+        if await api_client.async_refresh_token():
+            LOGGER.debug("✅ Tokens refreshed successfully on startup.")
+            refreshed = True
+        else:
+            LOGGER.warning("⚠️ Token refresh on startup failed, continuing with existing token.")
+    except Exception as e:
+        LOGGER.error("❌ Exception while refreshing token on startup: %s", str(e))
+
+    # Validate token after refresh attempt
+    try:
+        LOGGER.debug("📡 Validating token with server list request...")
         if not await api_client.async_make_servers_list_request(
             hass=hass,
             auth_token=api_client._data.auth_token,
             country_code=getattr(api_client._data, "country_code", ""),
             phone_number=getattr(api_client._data, "phone_number", ""),
         ):
-            LOGGER.warning("Server list failed on startup. Attempting token refresh...")
-            if await api_client.async_refresh_token():
-                LOGGER.debug("Token refresh on startup successful.")
-            else:
-                LOGGER.error("Failed to refresh token on startup. Manual re-login may be needed.")
+            LOGGER.error("❌ Server list validation failed even after refresh.")
         else:
-            LOGGER.debug("✅ Server list validation on startup successful.")
+            if refreshed:
+                LOGGER.debug("✅ Server list validation succeeded after refresh.")
+            else:
+                LOGGER.debug("✅ Server list validation succeeded using existing tokens.")
     except Exception as e:
-        LOGGER.error("❌ Exception during startup token validation: %s", str(e))
+        LOGGER.error("❌ Exception during server list validation: %s", str(e))
 
     await coordinator.async_config_entry_first_refresh()
 
