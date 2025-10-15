@@ -28,22 +28,14 @@ class DoorLogPoller:
         """Wait for the camera image URL to become available with retries."""
         for attempt in range(1, max_retries + 1):
             LOGGER.debug("Waiting for camera image for %s (attempt %d/%d)...", location, attempt, max_retries)
-            await self.async_retrieve_personal_door_log()
-            # After calling retrieve, check if the image URL is now available
-            # Assuming the poll function updates some state or returns data with image URL
-            # Since we don't have access to the actual data here, this is a placeholder
-            # In a real implementation, you'd check the updated data here
-            # For now, break after calling the poll function as per instructions
-            # If image URL found, break early (simulate with a placeholder condition)
-            # Here, we just assume it succeeded after calling the poll function
-            # If you have access to the data, replace the following with actual check
-            image_url_available = True  # Placeholder
-            if image_url_available:
-                LOGGER.debug("Camera image for %s is now available.", location)
-                break
+            events = await self.async_retrieve_personal_door_log()
+            if events:
+                for event in events:
+                    if event.get("location") == location and event.get("camera_url"):
+                        LOGGER.debug("Camera image for %s is now available: %s", location, event.get("camera_url"))
+                        return
             await asyncio.sleep(delay)
-        else:
-            LOGGER.error("Failed to retrieve camera image for %s after %d attempts.", location, max_retries)
+        LOGGER.error("Failed to retrieve camera image for %s after %d attempts.", location, max_retries)
 
     async def async_start(self):
         """Start polling the personal door log."""
