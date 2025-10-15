@@ -529,7 +529,6 @@ class AkuvoxApiClient:
 
     async def async_get_personal_door_log(self):
         """Request the user's personal door log data."""
-        # LOGGER.debug("📡 Retrieving list of user's personal door log...")
         host = self.get_activities_host()
         url = f"https://{host}/{API_GET_PERSONAL_DOOR_LOG}"
         data = {}
@@ -551,37 +550,27 @@ class AkuvoxApiClient:
                                                         headers=headers,
                                                         data=data) # type: ignore
 
-        # Response empty, manage retries and switching logic
-        if json_data is not None and len(json_data) == 0:
-            self._failed_attempts += 1
-            now = time.time()
-
-            # Only switch after 3 consecutive failures and 30 seconds since last switch
-            if self._failed_attempts >= 3 and (now - self._last_switch_time) > 30:
-                self.switch_activities_host()
+        # New logic: treat empty list as normal "no new events"
+        if json_data is not None:
+            if len(json_data) == 0:
+                LOGGER.debug("ℹ️ No new personal door log entries.")
                 self._failed_attempts = 0
-                self._last_switch_time = now
-                LOGGER.debug("🔁 Switching app type after repeated failures (cooldown 30s)")
+                return []
             else:
-                LOGGER.debug("⚠️  Empty response detected (failed_attempts=%d)", self._failed_attempts)
-
-            host = self.get_activities_host()
-            url = f"https://{host}/{API_GET_PERSONAL_DOOR_LOG}"
-            json_data = await self._async_api_wrapper(method="get",
-                                                      url=url,
-                                                      headers=headers,
-                                                      data=data) # type: ignore
-
-        if json_data is not None and len(json_data) > 0:
-            self._failed_attempts = 0
-            self._last_successful_app_type = self._data.app_type
-            return json_data
+                self._failed_attempts = 0
+                self._last_successful_app_type = self._data.app_type
+                return json_data
 
         # DEBUG block before error log
         if json_data is None:
             LOGGER.debug("🧩 personal_door_log debug: Response is None. Token=%s | URL=%s", self._data.token, url)
         else:
             LOGGER.debug("🧩 personal_door_log debug: Received response = %s", json_data)
+
+        # Use cached app type if last known successful app type exists
+        if self._last_successful_app_type:
+            LOGGER.debug("Reverting to last successful app type: %s", self._last_successful_app_type)
+            self._data.app_type = self._last_successful_app_type
 
         LOGGER.error("❌ Unable to retrieve user's personal door log")
         return None

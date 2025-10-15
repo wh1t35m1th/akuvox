@@ -212,20 +212,16 @@ class AkuvoxData:
                             LOGGER.debug("New door entry detected --> Not waiting for the screenshot URL...")
 
                             # Deferred retry mechanism for missing camera URLs
-                            def retry_fetch_log():
-                                # This function runs after delay to check if PicUrl is now available
-                                async def check_pic_url():
-                                    latest_log = await self.async_get_stored_data_for_key("latest_door_log")
-                                    if latest_log is not None and PIC_URL_KEY in latest_log and latest_log[PIC_URL_KEY]:
-                                        LOGGER.debug("Screenshot URL now available on retry.")
-                                        await self.async_set_stored_data_for_key("latest_door_log", latest_log)
-                                    else:
-                                        LOGGER.debug("Screenshot URL still missing after retry delay.")
+                            async def retry_fetch_log():
+                                LOGGER.debug("⏳ Retrying to fetch door log to check for screenshot URL availability...")
+                                await helpers.async_fetch_and_update_latest_door_log(self.hass)
+                                latest_log = await self.async_get_stored_data_for_key("latest_door_log")
+                                if latest_log and PIC_URL_KEY in latest_log and latest_log[PIC_URL_KEY]:
+                                    LOGGER.debug("✅ Screenshot URL became available after retry.")
+                                else:
+                                    LOGGER.debug("❌ Screenshot URL still missing after retry attempt.")
 
-                                # Schedule the coroutine in the event loop
-                                self.hass.async_create_task(check_pic_url())
-
-                            self.hass.loop.call_later(3, retry_fetch_log)
+                            self.hass.loop.call_later(3, lambda: self.hass.async_create_task(retry_fetch_log()))
 
                     # New door event detected
                     LOGGER.debug("ℹ️ New personal door log entry detected:")
