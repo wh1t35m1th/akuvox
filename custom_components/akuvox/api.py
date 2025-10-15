@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import json
+import time
 
 from homeassistant.core import HomeAssistant
 
@@ -64,6 +65,9 @@ class AkuvoxApiClient:
         """Akuvox API Client."""
         self._session = session
         self.hass = hass
+        self._last_successful_app_type = None
+        self._failed_attempts = 0
+        self._last_switch_time = 0
         if entry:
             LOGGER.debug("▶️ Initializing AkuvoxData from API client init")
             self._data = AkuvoxData(
@@ -547,9 +551,20 @@ class AkuvoxApiClient:
                                                         headers=headers,
                                                         data=data) # type: ignore
 
-        # Response empty, try changing app type "single" <--> "community"
+        # Response empty, manage retries and switching logic
         if json_data is not None and len(json_data) == 0:
-            self.switch_activities_host()
+            self._failed_attempts += 1
+            now = time.time()
+
+            # Only switch after 3 consecutive failures and 30 seconds since last switch
+            if self._failed_attempts >= 3 and (now - self._last_switch_time) > 30:
+                self.switch_activities_host()
+                self._failed_attempts = 0
+                self._last_switch_time = now
+                LOGGER.debug("🔁 Switching app type after repeated failures (cooldown 30s)")
+            else:
+                LOGGER.debug("⚠️  Empty response detected (failed_attempts=%d)", self._failed_attempts)
+
             host = self.get_activities_host()
             url = f"https://{host}/{API_GET_PERSONAL_DOOR_LOG}"
             json_data = await self._async_api_wrapper(method="get",
@@ -558,6 +573,8 @@ class AkuvoxApiClient:
                                                       data=data) # type: ignore
 
         if json_data is not None and len(json_data) > 0:
+            self._failed_attempts = 0
+            self._last_successful_app_type = self._data.app_type
             return json_data
 
         # DEBUG block before error log
