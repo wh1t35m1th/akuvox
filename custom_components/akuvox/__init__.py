@@ -42,6 +42,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_update_configuration(hass=hass, entry=entry, log_values=True)
 
     # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
+    # 🧠 Validate token on startup - if token fails, try refreshing automatically
+    try:
+        LOGGER.debug("🔍 Performing startup server list validation...")
+        if not await api_client.async_make_servers_list_request(
+            hass=hass,
+            auth_token=api_client._data.auth_token,
+            token=api_client._data.token,
+            country_code=getattr(api_client._data, "country_code", ""),
+            phone_number=getattr(api_client._data, "phone_number", ""),
+        ):
+            LOGGER.warning("Server list failed on startup. Attempting token refresh...")
+            if await api_client.async_refresh_token():
+                LOGGER.debug("Token refresh on startup successful.")
+            else:
+                LOGGER.error("Failed to refresh token on startup. Manual re-login may be needed.")
+        else:
+            LOGGER.debug("✅ Server list validation on startup successful.")
+    except Exception as e:
+        LOGGER.error("❌ Exception during startup token validation: %s", str(e))
+
     await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
