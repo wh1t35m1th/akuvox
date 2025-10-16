@@ -49,20 +49,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await async_update_configuration(hass=hass, entry=entry, log_values=True)
 
-    # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
-    # 🧠 Validate or refresh token on startup (refresh first, then validate)
-    LOGGER.debug("🔍 Performing startup token check...")
-
+    # Detect if HA has restarted and if token data exists
     refreshed = False
-    try:
-        LOGGER.debug("🔄 Attempting to refresh tokens on startup...")
-        if await api_client.async_refresh_token():
-            LOGGER.debug("✅ Tokens refreshed successfully on startup.")
-            refreshed = True
-        else:
-            LOGGER.warning("⚠️ Token refresh on startup failed, continuing with existing token.")
-    except Exception as e:
-        LOGGER.error("❌ Exception while refreshing token on startup: %s", str(e))
+    if api_client._data.token:
+        LOGGER.debug("🔍 Token data found on startup, attempting startup token refresh...")
+        try:
+            if await api_client.async_refresh_token():
+                LOGGER.debug("✅ Startup token refresh due to HA restart succeeded.")
+                refreshed = True
+                LOGGER.debug("ℹ️ Token refresh skipped, using existing session.")
+            else:
+                LOGGER.warning("⚠️ Startup token refresh due to HA restart failed, proceeding with full validation.")
+        except Exception as e:
+            LOGGER.error("❌ Exception while refreshing token on startup: %s", str(e))
+
+    if not refreshed:
+        # https://developers.home-assistant.io/docs/integration_fetching_data#coordinated-single-api-poll-for-data-for-all-entities
+        # 🧠 Validate or refresh token on startup (refresh first, then validate)
+        LOGGER.debug("🔍 Performing startup token check...")
+
+        try:
+            LOGGER.debug("🔄 Attempting to refresh tokens on startup...")
+            if await api_client.async_refresh_token():
+                LOGGER.debug("✅ Tokens refreshed successfully on startup.")
+                refreshed = True
+            else:
+                LOGGER.warning("⚠️ Token refresh on startup failed, continuing with existing token.")
+        except Exception as e:
+            LOGGER.error("❌ Exception while refreshing token on startup: %s", str(e))
 
     # Validate token after refresh attempt
     try:
