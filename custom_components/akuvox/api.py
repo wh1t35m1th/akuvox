@@ -341,12 +341,13 @@ class AkuvoxApiClient:
         """Refresh the authentication tokens using the refresh token."""
         # Always reload latest stored tokens before refreshing
         try:
-            await self._data.async_load_stored_data()
-            await self.ensure_latest_token()
+            latest_token = await self._data.async_get_stored_data_for_key("token")
             latest_refresh_token = await self._data.async_get_stored_data_for_key("refresh_token")
+            if latest_token and latest_token != self._data.token:
+                LOGGER.debug("♻️ Updating in-memory token before refresh: %s -> %s", self._data.token[:10], latest_token[:10])
+                self._data.token = latest_token
             if latest_refresh_token and latest_refresh_token != self._data.refresh_token:
-                LOGGER.debug("♻️ Updating in-memory refresh token before refresh: %s -> %s",
-                             self._data.refresh_token[:10], latest_refresh_token[:10])
+                LOGGER.debug("♻️ Updating in-memory refresh token before refresh: %s -> %s", self._data.refresh_token[:10], latest_refresh_token[:10])
                 self._data.refresh_token = latest_refresh_token
         except Exception as e:
             LOGGER.warning("⚠️ Failed to reload latest tokens before refresh: %s", e)
@@ -460,7 +461,7 @@ class AkuvoxApiClient:
         LOGGER.error("❌ Unable to retrieve user's device list.")
         return None
 
-    async def ensure_latest_token(self):
+    async def ensure_latest_token(self, force_reload=False):
         """Force reload of token from storage before any critical API call."""
         try:
             stored_token = await self._data.async_get_stored_data_for_key("token")
