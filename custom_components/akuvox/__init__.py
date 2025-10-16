@@ -42,7 +42,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Ensure persistent token data is fully loaded before configuration update
     try:
         LOGGER.debug("🔄 Loading stored Akuvox tokens before configuration update...")
-        await api_client._data.async_load_stored_data()
+        await api_client._data.async_get_stored_data_for_key("token")
+        await api_client._data.async_get_stored_data_for_key("refresh_token")
+        LOGGER.debug("🔁 Loaded stored token and refresh_token via async_get_stored_data_for_key()")
         await api_client.ensure_latest_token()
         LOGGER.debug("✅ Stored tokens loaded successfully before config initialization.")
     except Exception as e:
@@ -59,7 +61,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 LOGGER.debug("✅ Startup token refresh due to HA restart succeeded.")
                 await api_client.ensure_latest_token(force_reload=True)
                 LOGGER.debug("🔁 Forced in-memory token synchronization after startup refresh.")
-                await api_client._data.async_load_stored_data()
+                await api_client._data.async_get_stored_data_for_key("token")
+                await api_client._data.async_get_stored_data_for_key("refresh_token")
+                LOGGER.debug("🔁 Loaded stored token and refresh_token via async_get_stored_data_for_key()")
                 await api_client.ensure_latest_token()
                 LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
                 refreshed = True
@@ -80,7 +84,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 LOGGER.debug("✅ Tokens refreshed successfully on startup.")
                 await api_client.ensure_latest_token(force_reload=True)
                 LOGGER.debug("🔁 Forced in-memory token synchronization after startup refresh.")
-                await api_client._data.async_load_stored_data()
+                await api_client._data.async_get_stored_data_for_key("token")
+                await api_client._data.async_get_stored_data_for_key("refresh_token")
+                LOGGER.debug("🔁 Loaded stored token and refresh_token via async_get_stored_data_for_key()")
                 await api_client.ensure_latest_token()
                 LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
                 refreshed = True

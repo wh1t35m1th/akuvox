@@ -214,12 +214,15 @@ class AkuvoxData:
                             # Deferred retry mechanism for missing camera URLs
                             async def retry_fetch_log():
                                 LOGGER.debug("⏳ Retrying to fetch door log to check for screenshot URL availability...")
-                                await helpers.async_fetch_and_update_latest_door_log(self.hass)
-                                latest_log = await self.async_get_stored_data_for_key("latest_door_log")
-                                if latest_log and PIC_URL_KEY in latest_log and latest_log[PIC_URL_KEY]:
-                                    LOGGER.debug("✅ Screenshot URL became available after retry.")
+                                latest_log = await helpers.async_get_latest_door_log(self.hass)
+                                if latest_log:
+                                    await self.async_set_stored_data_for_key("latest_door_log", latest_log)
+                                    if PIC_URL_KEY in latest_log and latest_log[PIC_URL_KEY]:
+                                        LOGGER.debug("✅ Screenshot URL became available after retry.")
+                                    else:
+                                        LOGGER.debug("❌ Screenshot URL still missing after retry attempt.")
                                 else:
-                                    LOGGER.debug("❌ Screenshot URL still missing after retry attempt.")
+                                    LOGGER.debug("⚠️ Retry attempt failed: no data received from get_latest_door_log().")
 
                             self.hass.loop.call_later(3, lambda: self.hass.async_create_task(retry_fetch_log()))
 
