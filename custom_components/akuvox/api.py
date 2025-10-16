@@ -448,8 +448,20 @@ class AkuvoxApiClient:
         LOGGER.error("❌ Unable to retrieve user's device list.")
         return None
 
+    async def ensure_latest_token(self):
+        """Force reload of token from storage before any critical API call."""
+        try:
+            stored_token = await self._data.async_get_stored_data_for_key("token")
+            if stored_token and stored_token != self._data.token:
+                LOGGER.debug("♻️ Updating in-memory token before request: %s -> %s",
+                             self._data.token[:10], stored_token[:10])
+                self._data.token = stored_token
+        except Exception as e:
+            LOGGER.warning("⚠️ Failed to reload latest token before request: %s", e)
+
     def make_opendoor_request(self, name: str, host: str, data: str):
         """Request the user's configuration data."""
+        asyncio.run_coroutine_threadsafe(self.ensure_latest_token(), self.hass.loop)
         LOGGER.debug("📡 Sending request to open door '%s'...", name)
         LOGGER.debug("Request data = %s", str(data))
         url = f"https://{host}/{API_OPENDOOR}?token={self._data.token}"

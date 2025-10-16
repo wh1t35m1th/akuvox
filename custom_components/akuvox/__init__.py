@@ -43,6 +43,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         LOGGER.debug("🔄 Loading stored Akuvox tokens before configuration update...")
         await api_client._data.async_load_stored_data()
+        await api_client.ensure_latest_token()
         LOGGER.debug("✅ Stored tokens loaded successfully before config initialization.")
     except Exception as e:
         LOGGER.warning("⚠️ Failed to load stored token data before configuration: %s", e)
@@ -57,6 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if await api_client.async_refresh_token():
                 LOGGER.debug("✅ Startup token refresh due to HA restart succeeded.")
                 await api_client._data.async_load_stored_data()
+                await api_client.ensure_latest_token()
                 LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
                 refreshed = True
                 LOGGER.debug("ℹ️ Token refresh skipped, using existing session.")
@@ -75,6 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if await api_client.async_refresh_token():
                 LOGGER.debug("✅ Tokens refreshed successfully on startup.")
                 await api_client._data.async_load_stored_data()
+                await api_client.ensure_latest_token()
                 LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
                 refreshed = True
             else:
@@ -99,6 +102,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 LOGGER.debug("✅ Server list validation succeeded using existing tokens.")
     except Exception as e:
         LOGGER.error("❌ Exception during server list validation: %s", str(e))
+
+    LOGGER.debug("🔑 Active token after initialization: %s", api_client._data.token)
 
     await coordinator.async_config_entry_first_refresh()
 
