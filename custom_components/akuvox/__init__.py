@@ -56,6 +56,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             if await api_client.async_refresh_token():
                 LOGGER.debug("✅ Startup token refresh due to HA restart succeeded.")
+                await api_client._data.async_load_stored_data()
+                LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
                 refreshed = True
                 LOGGER.debug("ℹ️ Token refresh skipped, using existing session.")
             else:
@@ -72,6 +74,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             LOGGER.debug("🔄 Attempting to refresh tokens on startup...")
             if await api_client.async_refresh_token():
                 LOGGER.debug("✅ Tokens refreshed successfully on startup.")
+                await api_client._data.async_load_stored_data()
+                LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
                 refreshed = True
             else:
                 LOGGER.warning("⚠️ Token refresh on startup failed, continuing with existing token.")

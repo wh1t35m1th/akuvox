@@ -402,6 +402,11 @@ class AkuvoxApiClient:
                         "last_token_refresh", int(asyncio.get_event_loop().time())
                     )
 
+                    # Update in-memory tokens immediately
+                    self._data.token = token_data.get("token", self._data.token)
+                    self._data.refresh_token = token_data.get("refresh_token", self._data.refresh_token)
+                    LOGGER.debug("🔁 Updated in-memory tokens after successful refresh.")
+
                     LOGGER.debug("💾 Stored new token pair to persistent storage:")
                     LOGGER.debug("   token = %s", self._data.token)
                     LOGGER.debug("   refresh_token = %s", self._data.refresh_token)
