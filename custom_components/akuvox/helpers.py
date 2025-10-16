@@ -63,3 +63,16 @@ class AkuvoxHelpers:
             if value.get("country") == country_name:
                 return value.get("phone_number")
         return None
+
+    async def async_get_latest_door_log(self, hass):
+        """Fetch the latest door log entry directly via the existing API client."""
+        try:
+            from .api import AkuvoxApi
+            api = AkuvoxApi(hass)
+            json_data = await api.async_get_personal_door_log(limit=1)
+            if json_data and len(json_data) > 0:
+                return json_data[0]
+            return None
+        except Exception as err:
+            LOGGER.debug("⚠️ async_get_latest_door_log() failed: %s", err)
+            return None
