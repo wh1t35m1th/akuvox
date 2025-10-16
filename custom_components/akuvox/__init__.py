@@ -57,6 +57,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             if await api_client.async_refresh_token():
                 LOGGER.debug("✅ Startup token refresh due to HA restart succeeded.")
+                await api_client.ensure_latest_token(force_reload=True)
+                LOGGER.debug("🔁 Forced in-memory token synchronization after startup refresh.")
                 await api_client._data.async_load_stored_data()
                 await api_client.ensure_latest_token()
                 LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
@@ -76,6 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             LOGGER.debug("🔄 Attempting to refresh tokens on startup...")
             if await api_client.async_refresh_token():
                 LOGGER.debug("✅ Tokens refreshed successfully on startup.")
+                await api_client.ensure_latest_token(force_reload=True)
+                LOGGER.debug("🔁 Forced in-memory token synchronization after startup refresh.")
                 await api_client._data.async_load_stored_data()
                 await api_client.ensure_latest_token()
                 LOGGER.debug("🔁 Reloaded in-memory tokens after refresh to ensure consistency.")
