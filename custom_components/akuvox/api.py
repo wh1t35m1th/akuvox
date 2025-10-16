@@ -109,6 +109,10 @@ class AkuvoxApiClient:
         # Begin polling personal door log
         await self.async_start_polling()
 
+        # Start periodic token refresh scheduler
+        self.hass.loop.create_task(self.async_schedule_token_refresh())
+        LOGGER.debug("🔄 Token refresh scheduler initialized.")
+
         return True
 
     async def async_start_polling(self):
@@ -811,3 +815,22 @@ class AkuvoxApiClient:
         days_until_refresh = time_until_refresh // (24 * 60 * 60)
         LOGGER.debug("✅ Tokens are fresh (refresh in %d days)", days_until_refresh)
         return True
+
+    async def async_schedule_token_refresh(self):
+        """Periodically check and refresh tokens every 24 hours."""
+        if getattr(self, "_refresh_task_running", False):
+            LOGGER.debug("⏰ Token refresh scheduler already running, skipping duplicate start.")
+            return
+        self._refresh_task_running = True
+        LOGGER.debug("⏰ Starting scheduled token refresh task.")
+        try:
+            while True:
+                await asyncio.sleep(24 * 60 * 60)  # Run every 24 hours
+                LOGGER.debug("⏰ Scheduled token validity check triggered.")
+                try:
+                    await self.async_check_and_refresh_tokens()
+                except Exception as e:
+                    LOGGER.error("⚠️ Scheduled token refresh failed: %s", e)
+        except asyncio.CancelledError:
+            LOGGER.debug("🛑 Token refresh scheduler cancelled.")
+            self._refresh_task_running = False
