@@ -3,6 +3,7 @@ from datetime import datetime
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers import storage
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.const import EntityCategory
 
 from .api import AkuvoxApiClient
 from .coordinator import AkuvoxDataUpdateCoordinator
@@ -16,7 +17,7 @@ from .const import (
 from .entity import AkuvoxEntity
 
 async def async_setup_entry(hass, entry, async_add_devices):
-    """Set up the temporary door key platform."""
+    """Set up the temporary door key platform and token sensor."""
     coordinator: AkuvoxDataUpdateCoordinator
     for _key, value in hass.data[DOMAIN].items():
         coordinator = value
@@ -51,6 +52,8 @@ async def async_setup_entry(hass, entry, async_add_devices):
                 qr_code_url=qr_code_url,
             )
         )
+
+    entities.append(AkuvoxTokenSensor(client=client, entry=entry))
 
     async_add_devices(entities)
 
@@ -121,3 +124,32 @@ class AkuvoxTemporaryDoorKey(SensorEntity, AkuvoxEntity):
             'qr_code_url': self.qr_code_url,
             'expired': not self.is_key_active()
         }
+
+class AkuvoxTokenSensor(SensorEntity, AkuvoxEntity):
+    """Sensor to display a masked view of the Akuvox API token."""
+
+    def __init__(self, client: AkuvoxApiClient, entry) -> None:
+        """Initialize the Akuvox token sensor."""
+        super().__init__(client=client, entry=entry)
+        self._attr_name = "Akuvox Token"
+        self._attr_unique_id = "akuvox_token_sensor"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:key-chain"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "Akuvox Token")},
+            name="Akuvox Token",
+            model=VERSION,
+            manufacturer=NAME,
+        )
+
+    @property
+    def native_value(self):
+        """Return the masked Akuvox API token."""
+        token = getattr(self.client._data, "token", None)
+        if token and len(token) > 14:
+            return f"{token[:8]}...{token[-6:]}"
+        elif token:
+            # If token is shorter than 15 chars, show as is
+            return token
+        else:
+            return "Unavailable"
