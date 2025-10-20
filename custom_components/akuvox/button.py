@@ -88,6 +88,10 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
         )
 
     def press(self) -> None:
+        """Sync fallback that calls async version safely."""
+        self.hass.loop.create_task(self.async_press())
+
+    async def async_press(self) -> None:
         """Trigger the door relay."""
         await self._client.async_make_opendoor_request(
             name=self._name,
