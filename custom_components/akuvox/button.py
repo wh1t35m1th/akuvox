@@ -89,7 +89,7 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
 
     def press(self) -> None:
         """Trigger the door relay."""
-        self._client.make_opendoor_request(
+        await self._client.async_make_opendoor_request(
             name=self._name,
             host=self._host,
             data=self._data
