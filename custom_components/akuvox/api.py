@@ -476,10 +476,10 @@ class AkuvoxApiClient:
         except Exception as e:
             LOGGER.warning("⚠️ Failed to reload latest token before request: %s", e)
 
-    def make_opendoor_request(self, name: str, host: str, data: str):
-        """Request the user's configuration data."""
-        asyncio.run_coroutine_threadsafe(self.ensure_latest_token(), self.hass.loop)
-        LOGGER.debug("📡 Sending request to open door '%s'...", name)
+    async def async_make_opendoor_request(self, name: str, host: str, data: str):
+        """Asynchronous non-blocking door open request."""
+        await self.ensure_latest_token()
+        LOGGER.debug("📡 Sending request to open door '%s' asynchronously...", name)
         LOGGER.debug("Request data = %s", str(data))
         url = f"https://{host}/{API_OPENDOOR}?token={self._data.token}"
         headers = {
@@ -492,17 +492,23 @@ class AkuvoxApiClient:
             "Accept": "*/*",
             "User-Agent": "VBell/6.61.2 (iPhone; iOS 16.6; Scale/3.00)",
             "Accept-Language": "en-AU;q=1, he-AU;q=0.9, ru-RU;q=0.8",
-            "Content-Length": "24",
             "x-cloud-lang": "en",
         }
-        LOGGER.debug("🔑 Using token for door open: %s", self._data.token)
-        response = self.post_request(url=url, headers=headers, data=data)
-        json_data = self.process_response(response, url)
-        if json_data is not None:
-            LOGGER.debug("✅ Door open request sent successfully.")
-            return json_data
 
-        LOGGER.error("❌ Request to open door failed.")
+        LOGGER.debug("🔑 Using token for door open: %s", self._data.token)
+
+        try:
+            async with async_timeout.timeout(5):
+                async with self._session.post(url, headers=headers, data=data) as resp:
+                    if resp.status == 200:
+                        json_data = await resp.json()
+                        LOGGER.debug("✅ Door open request sent successfully.")
+                        return json_data
+                    LOGGER.error("❌ Door open request failed with status %s", resp.status)
+        except asyncio.TimeoutError:
+            LOGGER.error("⏰ Door open request timed out.")
+        except Exception as e:
+            LOGGER.error("❌ Error opening door: %s", e)
         return None
 
     async def async_retrieve_temp_keys_data(self) -> bool:

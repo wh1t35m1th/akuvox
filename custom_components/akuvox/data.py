@@ -1,6 +1,6 @@
-"""Akuvox Data Class."""
+"""Akuvox Data Class - FIXED VERSION."""
 from __future__ import annotations
-# from dataclasses import dataclass
+import asyncio
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -18,7 +18,6 @@ from .helpers import AkuvoxHelpers
 
 helpers = AkuvoxHelpers()
 
-# @dataclass
 class AkuvoxData:
     """Data class holding key data from API requests."""
 
@@ -37,6 +36,7 @@ class AkuvoxData:
     camera_data = []
     door_relay_data = []
     door_keys_data = []
+    _processing_lock: asyncio.Lock = None  # type: ignore
 
 
     def __init__(self,
@@ -74,6 +74,9 @@ class AkuvoxData:
                     LOGGER.debug("Unable to use country due to error: %s", error)
         if subdomain is None:
             self.subdomain = "ecloud"
+
+        # Initialize the processing lock
+        self._processing_lock = asyncio.Lock()
 
         self.hass.add_job(self.async_set_stored_data_for_key, "wait_for_image_url", self.wait_for_image_url)
 
@@ -191,53 +194,151 @@ class AkuvoxData:
                              str(len(door_keys_data["doors"])),
                              "" if len(door_keys_data["doors"]) == 1 else "s")
 
+    async def async_wait_for_camera_url(self, door_log: dict, max_wait_seconds: int = 5) -> dict:
+        """
+        Wait for the camera URL to become available with aggressive polling.
+        
+        Args:
+            door_log: The initial door log entry (may have empty PicUrl)
+            max_wait_seconds: Maximum time to wait in seconds (default 5)
+            
+        Returns:
+            door_log with updated PicUrl if found, or original if timeout
+        """
+        capture_time = door_log.get(CAPTURE_TIME_KEY)
+        location = door_log.get("Location", "Unknown")
+        
+        if not capture_time:
+            LOGGER.warning("⚠️ Door log missing CaptureTime, cannot retry for camera URL")
+            return door_log
+        
+        # If we already have a URL, no need to wait
+        if door_log.get(PIC_URL_KEY):
+            LOGGER.debug("✅ Camera URL already present for %s", location)
+            return door_log
+        
+        LOGGER.info("⏳ Waiting for camera URL for %s (max %ds)...", location, max_wait_seconds)
+        
+        # Poll every 0.5 seconds for up to max_wait_seconds
+        poll_interval = 0.5
+        max_attempts = int(max_wait_seconds / poll_interval)
+        
+        for attempt in range(1, max_attempts + 1):
+            await asyncio.sleep(poll_interval)
+            
+            # Fetch latest door log from API
+            try:
+                # Import here to avoid circular dependency
+                from .api import AkuvoxApiClient
+                
+                # Get the API client from hass.data
+                api_client = None
+                from .const import DOMAIN
+                if DOMAIN in self.hass.data:
+                    for entry_data in self.hass.data[DOMAIN].values():
+                        if hasattr(entry_data, 'client'):
+                            api_client = entry_data.client
+                            break
+                
+                if not api_client:
+                    LOGGER.error("❌ Could not find API client for camera URL retry")
+                    break
+                
+                # Fetch the latest door log
+                json_data = await api_client.async_get_personal_door_log()
+                
+                if json_data and len(json_data) > 0:
+                    latest_log = json_data[0]
+                    
+                    # Check if this is the same event (matching CaptureTime)
+                    if latest_log.get(CAPTURE_TIME_KEY) == capture_time:
+                        pic_url = latest_log.get(PIC_URL_KEY, "")
+                        
+                        if pic_url:
+                            LOGGER.info("✅ Camera URL found after %.1fs for %s", 
+                                      attempt * poll_interval, location)
+                            # Update the stored latest door log
+                            await self.async_set_stored_data_for_key("latest_door_log", latest_log)
+                            return latest_log
+                        else:
+                            LOGGER.debug("🔄 Attempt %d/%d: Camera URL still empty for %s", 
+                                       attempt, max_attempts, location)
+                    else:
+                        LOGGER.debug("⏭️ Door log changed during retry (new event occurred)")
+                        break
+                        
+            except Exception as e:
+                LOGGER.warning("⚠️ Error during camera URL retry: %s", e)
+                break
+        
+        # Timeout reached
+        LOGGER.warning("⏱️ Timeout waiting for camera URL for %s after %ds", 
+                      location, max_wait_seconds)
+        return door_log
+
     async def async_parse_personal_door_log(self, json_data: list):
-        """Parse the getDoorLog API response."""
-        ret_value = None
-        is_wait = await self.async_get_stored_data_for_key("wait_for_image_url")
-        if json_data is not None and len(json_data) > 0:
+        """Parse the getDoorLog API response with improved camera URL handling."""
+        if json_data is None or len(json_data) == 0:
+            return None
+        
+        # Use lock to prevent concurrent processing of the same event
+        if self._processing_lock.locked():
+            LOGGER.debug("🔒 Event processing already in progress, skipping duplicate call")
+            return None
+        
+        async with self._processing_lock:
             new_door_log = json_data[0]
             latest_door_log = await self.async_get_stored_data_for_key("latest_door_log")
+            
+            # Check if this is a new event
             if latest_door_log is not None and CAPTURE_TIME_KEY in latest_door_log:
                 if new_door_log is not None and CAPTURE_TIME_KEY in new_door_log:
-                    # Ignore previous door open event
+                    # Ignore if it's the same event
                     if str(latest_door_log[CAPTURE_TIME_KEY]) == str(new_door_log[CAPTURE_TIME_KEY]):
                         return None
-                    # Screenshot required and currently unavailable
-                    if PIC_URL_KEY in new_door_log and new_door_log[PIC_URL_KEY] == "":
-                        if is_wait is True:
-                            LOGGER.debug("New door entry detected --> Waiting for screenshot URL...")
-                            return None
-                        else:
-                            LOGGER.debug("New door entry detected --> Not waiting for the screenshot URL...")
-
-                            # Deferred retry mechanism for missing camera URLs
-                            async def retry_fetch_log():
-                                LOGGER.debug("⏳ Retrying to fetch door log to check for screenshot URL availability...")
-                                latest_log = await helpers.async_get_latest_door_log(self.hass)
-                                if latest_log:
-                                    await self.async_set_stored_data_for_key("latest_door_log", latest_log)
-                                    if PIC_URL_KEY in latest_log and latest_log[PIC_URL_KEY]:
-                                        LOGGER.debug("✅ Screenshot URL became available after retry.")
-                                    else:
-                                        LOGGER.debug("❌ Screenshot URL still missing after retry attempt.")
-                                else:
-                                    LOGGER.debug("⚠️ Retry attempt failed: no data received from get_latest_door_log().")
-
-                            self.hass.loop.call_later(3, lambda: self.hass.async_create_task(retry_fetch_log()))
-
-                    # New door event detected
-                    LOGGER.debug("ℹ️ New personal door log entry detected:")
-                    LOGGER.debug(" - Initiator: %s", new_door_log["Initiator"])
-                    LOGGER.debug(" - CaptureType: %s", new_door_log["CaptureType"])
-                    LOGGER.debug(" - Location: %s", new_door_log["Location"])
-                    LOGGER.debug(" - Door MAC: %s", new_door_log["MAC"])
-                    LOGGER.debug(" - Door Relay: %s", new_door_log["Relay"])
-                    LOGGER.debug(" - Camera screenshot URL: %s", new_door_log["PicUrl"])
-                    ret_value = new_door_log
-
+            
+            # New event detected!
+            location = new_door_log.get("Location", "Unknown")
+            initiator = new_door_log.get("Initiator", "Unknown")
+            capture_type = new_door_log.get("CaptureType", "Unknown")
+            
+            LOGGER.info("🚪 New door event: %s at %s (%s)", initiator, location, capture_type)
+            
+            # Check if camera URL is missing
+            pic_url = new_door_log.get(PIC_URL_KEY, "")
+            
+            if not pic_url:
+                LOGGER.warning("📷 Camera URL missing for %s, attempting to retrieve...", location)
+                
+                # ALWAYS wait for camera URL (with timeout)
+                # This ensures we try to get the image before firing the event
+                new_door_log = await self.async_wait_for_camera_url(
+                    new_door_log, 
+                    max_wait_seconds=5  # Configurable timeout
+                )
+                
+                # Log final result
+                final_pic_url = new_door_log.get(PIC_URL_KEY, "")
+                if final_pic_url:
+                    LOGGER.info("✅ Camera URL retrieved successfully for %s", location)
+                else:
+                    LOGGER.warning("❌ Camera URL unavailable for %s - event will fire without image", location)
+            else:
+                LOGGER.debug("✅ Camera URL present immediately for %s", location)
+            
+            # Log the complete event details
+            LOGGER.debug("ℹ️ Door event details:")
+            LOGGER.debug(" - Initiator: %s", new_door_log.get("Initiator"))
+            LOGGER.debug(" - CaptureType: %s", new_door_log.get("CaptureType"))
+            LOGGER.debug(" - Location: %s", new_door_log.get("Location"))
+            LOGGER.debug(" - Door MAC: %s", new_door_log.get("MAC"))
+            LOGGER.debug(" - Door Relay: %s", new_door_log.get("Relay"))
+            LOGGER.debug(" - Camera URL: %s", "Present" if new_door_log.get(PIC_URL_KEY) else "Missing")
+            
+            # Store as the latest door log
             await self.async_set_stored_data_for_key("latest_door_log", new_door_log)
-        return ret_value
+            
+            return new_door_log
 
     ###################
 
