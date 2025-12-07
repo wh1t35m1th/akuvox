@@ -393,7 +393,8 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        # Parent class provides config_entry as a property
+        # No need to set it manually
 
     async def async_step_init(self, user_input=None):
         """Initialize the options flow."""
