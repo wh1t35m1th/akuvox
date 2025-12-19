@@ -261,8 +261,8 @@ class AkuvoxData:
                             await self.async_set_stored_data_for_key("latest_door_log", latest_log)
                             return latest_log
                         else:
-                            LOGGER.debug("🔄 Attempt %d/%d: Camera URL still empty for %s", 
-                                       attempt, max_attempts, location)
+                            if attempt % 2 == 0:
+                                LOGGER.debug ("🔄 Attempt %d/%d: Camera URL still empty for %s", attempt, max_attempts, location)
                     else:
                         LOGGER.debug("⏭️ Door log changed during retry (new event occurred)")
                         break
@@ -283,7 +283,7 @@ class AkuvoxData:
         
         # Use lock to prevent concurrent processing of the same event
         if self._processing_lock.locked():
-            LOGGER.debug("🔒 Event processing already in progress, skipping duplicate call")
+            # Don't log - this is expected during normal operation
             return None
         
         async with self._processing_lock:

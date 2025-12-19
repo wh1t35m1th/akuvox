@@ -593,7 +593,7 @@ class AkuvoxApiClient:
         # New logic: treat empty list as normal "no new events"
         if json_data is not None:
             if len(json_data) == 0:
-                LOGGER.debug("ℹ️ No new personal door log entries.")
+                # LOGGER.debug("ℹ️ No new personal door log entries.")
                 self._failed_attempts = 0
                 return []
             else:
@@ -601,18 +601,14 @@ class AkuvoxApiClient:
                 self._last_successful_app_type = self._data.app_type
                 return json_data
 
-        # DEBUG block before error log
-        if json_data is None:
-            LOGGER.debug("🧩 personal_door_log debug: Response is None. Token=%s | URL=%s", self._data.token, url)
-        else:
-            LOGGER.debug("🧩 personal_door_log debug: Received response = %s", json_data)
-
-        # Use cached app type if last known successful app type exists
+        # Only log first failure to avoid spam
         if self._last_successful_app_type:
-            LOGGER.debug("Reverting to last successful app type: %s", self._last_successful_app_type)
             self._data.app_type = self._last_successful_app_type
+        
+        if self._failed_attempts == 0:
+            LOGGER.warning("❌ Unable to retrieve user's personal door log")
+            self._failed_attempts = 1
 
-        LOGGER.error("❌ Unable to retrieve user's personal door log")
         return None
 
     ###################
@@ -632,7 +628,8 @@ class AkuvoxApiClient:
                 func = self.post_request if method == "post" else self.get_request
                 subdomain = self._data.subdomain
                 url = url.replace("subdomain.", f"{subdomain}.")
-                if not url.endswith(API_GET_PERSONAL_DOOR_LOG):
+                # Only log non-polling requests to reduce spam
+                if not url.endswith(API_GET_PERSONAL_DOOR_LOG) and not url.endswith(API_SERVERS_LIST):
                     LOGGER.debug("⏳ Sending request to %s", url)
                 response = await self.hass.async_add_executor_job(func, url, headers, data, 10)
                 return self.process_response(response, url)
