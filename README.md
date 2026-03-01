@@ -72,13 +72,13 @@ Integrate your Akuvox SmartPlus intercom system with Home Assistant. Access live
 2. Search for **Akuvox SmartPlus**
 3. Choose a sign-in method:
 
+> **Note:** Akuvox uses rotating single-use refresh tokens. Regardless of which sign-in method you use, **the SmartPlus mobile app will be signed out every time HA refreshes tokens (every 6 days)**. Simultaneous use of HA and the mobile app is not supported.
+
 #### Method 1: SMS Verification (Recommended)
 - Enter your country and phone number
 - Enter the SMS verification code sent to your phone
-- **Note:** This will sign you out of the SmartPlus mobile app
 
 #### Method 2: App Tokens (Advanced)
-- Lets you stay signed in on your mobile device simultaneously
 - Requires extracting tokens from the SmartPlus app using a proxy tool (e.g. mitmproxy)
 - See [REFRESH_TOKEN_GUIDE.md](REFRESH_TOKEN_GUIDE.md) for extraction steps
 

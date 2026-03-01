@@ -1,8 +1,10 @@
 # How to Get Your First Refresh Token
 
-## Option 1: Automatic Capture (Recommended)
+> **Warning:** Akuvox uses rotating single-use refresh tokens. Regardless of which sign-in method you use, **the SmartPlus mobile app will be signed out every time HA refreshes tokens (every 6 days)**. Simultaneous use of HA and the mobile app is not supported.
 
-The easiest way is to let the integration capture the refresh token automatically during setup:
+## Option 1: Automatic Capture via SMS Login
+
+The easiest way to get a refresh token is to let the integration capture it automatically during setup:
 
 ### For New Users
 1. **Delete existing integration** (if you have one) from Home Assistant
