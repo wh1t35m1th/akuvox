@@ -380,11 +380,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 msg=None,
                 default=user_input.get("token", DEFAULT_TOKEN),  # type: ignore
                 description="Your SmartPlus account's token string"): str,
-            vol.Optional(
+            vol.Required(
                 "refresh_token",
                 msg=None,
                 default=user_input.get("refresh_token", ""),  # type: ignore
-                description="Your SmartPlus account's refresh_token string (optional)"): str,
+                description="Your SmartPlus account's refresh_token string"): str,
             vol.Optional("subdomain",
                          default="Default", # type: ignore
                          description="Manually set the regional API subdomain"):
