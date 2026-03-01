@@ -6,9 +6,11 @@ from homeassistant.helpers import storage
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.core import HomeAssistant
 from homeassistant.components.camera import Camera, CameraEntityFeature
-from homeassistant.components.stream import create_stream
 
 from .const import DOMAIN, LOGGER, NAME, VERSION, DATA_STORAGE_KEY
+
+GO2RTC_KEY = "go2rtc"
+GO2RTC_RTSP_PORT = 1984
 
 
 async def async_setup_entry(hass: HomeAssistant,
@@ -67,6 +69,7 @@ class AkuvoxCameraEntity(Camera):
         self._attr_name = name
         self._attr_supported_features = CameraEntityFeature.STREAM
         self._attr_is_streaming = True
+        self.stream_options = {"rtsp_transport": "tcp"}
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, name)},

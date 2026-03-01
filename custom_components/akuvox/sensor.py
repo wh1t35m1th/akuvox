@@ -4,6 +4,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers import storage
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.const import EntityCategory
+from homeassistant.core import callback
 
 from .api import AkuvoxApiClient
 from .coordinator import AkuvoxDataUpdateCoordinator
@@ -54,6 +55,7 @@ async def async_setup_entry(hass, entry, async_add_devices):
         )
 
     entities.append(AkuvoxTokenSensor(client=client, entry=entry))
+    entities.append(AkuvoxLastDoorEventSensor(hass=hass, client=client, entry=entry))
 
     async_add_devices(entities)
 
@@ -124,6 +126,90 @@ class AkuvoxTemporaryDoorKey(SensorEntity, AkuvoxEntity):
             'qr_code_url': self.qr_code_url,
             'expired': not self.is_key_active()
         }
+
+class AkuvoxLastDoorEventSensor(SensorEntity, AkuvoxEntity):
+    """Sensor that tracks the last door event timestamp and metadata."""
+
+    def __init__(self, hass, client: AkuvoxApiClient, entry) -> None:
+        """Initialize the last door event sensor."""
+        super().__init__(client=client, entry=entry)
+        self._attr_name = "Akuvox Last Door Event"
+        self._attr_unique_id = "akuvox_last_door_event_sensor"
+        self._attr_icon = "mdi:door-open"
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = {}
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "Akuvox Last Door Event")},
+            name="Akuvox Last Door Event",
+            model=VERSION,
+            manufacturer=NAME,
+        )
+        self._hass = hass
+        self._unsub = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register listener for door update events."""
+        await super().async_added_to_hass()
+
+        # Pre-populate from the latest stored door log so the sensor
+        # has a value immediately after a HA restart.
+        try:
+            store = storage.Store(self._hass, 1, DATA_STORAGE_KEY)
+            stored_data: dict = await store.async_load() or {}
+            latest_log = stored_data.get("latest_door_log")
+            if latest_log:
+                self._apply_door_log(latest_log)
+        except Exception as err:
+            LOGGER.debug("Could not pre-load last door log: %s", err)
+
+        @callback
+        def _handle_door_event(event):
+            """Handle incoming akuvox_door_update events."""
+            self._apply_door_log(event.data)
+            self.async_write_ha_state()
+
+        self._unsub = self._hass.bus.async_listen(
+            "akuvox_door_update", _handle_door_event
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister event listener on removal."""
+        if self._unsub:
+            self._unsub()
+
+    def _apply_door_log(self, door_log: dict) -> None:
+        """Extract fields from a door log entry into sensor state/attributes."""
+        raw_time = door_log.get("CaptureTime", "")
+        location = door_log.get("Location", "")
+        initiator = door_log.get("Initiator", "")
+        capture_type = door_log.get("CaptureType", "")
+        pic_url = door_log.get("PicUrl", "")
+        mac = door_log.get("MAC", "")
+        relay = door_log.get("Relay", "")
+
+        # Parse the timestamp so HA can display it nicely
+        parsed_time = None
+        if raw_time:
+            for fmt in ("%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    parsed_time = datetime.strptime(raw_time, fmt)
+                    break
+                except ValueError:
+                    continue
+
+        # The sensor's primary value is the human-readable timestamp string
+        self._attr_native_value = raw_time if raw_time else None
+
+        self._attr_extra_state_attributes = {
+            "location": location,
+            "initiator": initiator,
+            "capture_type": capture_type,
+            "pic_url": pic_url,
+            "mac": mac,
+            "relay": relay,
+            "parsed_time": parsed_time.isoformat() if parsed_time else None,
+        }
+
 
 class AkuvoxTokenSensor(SensorEntity, AkuvoxEntity):
     """Sensor to display a masked view of the Akuvox API token."""
