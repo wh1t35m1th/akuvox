@@ -50,9 +50,7 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
 
     _client: AkuvoxApiClient
     _name: str = ""
-    _host: str = ""
-    _token: str = ""
-    _data: str = ""
+    _relay_data: str = ""
 
     def __init__(
         self,
@@ -72,9 +70,9 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
         unique_name = name + ", " + relay_id
         self._client = client
         self._name = unique_name
-        self._host = self.get_saved_value("host")
-        self._token = self.get_saved_value("token")
-        self._data = data
+        self._relay_data = data
+        # Note: host and token are NOT cached here — they are read live from
+        # client._data at press time so they always reflect the current valid values.
 
         self._attr_unique_id = unique_name
         self._attr_name = unique_name
@@ -92,10 +90,13 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
         self.hass.loop.create_task(self.async_press())
 
     async def async_press(self) -> None:
-        """Trigger the door relay."""
+        """Trigger the door relay using the live host from the API client."""
+        host = self._client._data.host
+        if not host:
+            LOGGER.error("❌ Cannot open door '%s': host address is not set", self._name)
+            return
         await self._client.async_make_opendoor_request(
             name=self._name,
-            host=self._host,
-            data=self._data
+            host=host,
+            data=self._relay_data
         )
-

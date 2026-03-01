@@ -81,17 +81,22 @@ class AkuvoxData:
         self.hass.add_job(self.async_set_stored_data_for_key, "wait_for_image_url", self.wait_for_image_url)
 
     def get_value_for_key(self, entry: ConfigEntry, key: str, default):
-        """Get the value for a given key. 1st check: configured, 2nd check: options, 3rd check: data."""
+        """Get the value for a given key. Options take priority over data for token fields."""
         if entry is not None:
             if isinstance(entry, dict):
                 if key in entry["configured"]: # type: ignore
                     return entry["configured"][key] # type: ignore
                 return default
-            override = entry.options.get("override", False) or key == "event_screenshot_options"
-            placeholder = entry.data.get(key, None)
-            if override:
-                return entry.options.get(key, placeholder)
-            return placeholder
+            # Token fields: always prefer options (user may have updated them after initial setup)
+            token_keys = {"token", "auth_token", "refresh_token", "subdomain", "phone_number",
+                          "country_code", "event_screenshot_options"}
+            data_value = entry.data.get(key, None)
+            if key in token_keys:
+                # options wins if it has a non-empty value, otherwise fall back to data
+                options_value = entry.options.get(key, None)
+                if options_value:
+                    return options_value
+            return data_value
         return default
 
     def parse_rest_server_response(self, json_data: dict):

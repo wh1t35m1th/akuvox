@@ -192,14 +192,24 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Perform login via auth_token, token and phone number
             if all(len(value) > 0 for value in (country_code, phone_number, token, auth_token)):
-                # Retrieve servers_list data.
-                login_successful = await self.akuvox_api_client.async_make_servers_list_request(
+                # Initialize _data on the client before making any API calls
+                self.akuvox_api_client.init_api_with_data(
+                    hass=self.hass,
+                    subdomain=subdomain,
+                    auth_token=auth_token,
+                    token=token,
+                    phone_number=phone_number,
+                    country_code=country_code,
+                )
+                # Validate tokens directly without triggering polling or recursion
+                login_successful = await self.akuvox_api_client.async_validate_tokens(
                     hass=self.hass,
                     auth_token=auth_token,
                     token=token,
-                    country_code=country_code,
                     phone_number=phone_number,
-                    subdomain=subdomain)
+                    subdomain=subdomain,
+                    country_code=country_code,
+                )
                 if login_successful is True:
                     # Retrieve connected device data
                     await self.akuvox_api_client.async_retrieve_user_data()
@@ -462,37 +472,44 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 last_step=True
             )
 
-        # Validate tokens
+        # Apply new tokens immediately to the running API client in memory
         api_client: AkuvoxApiClient = None
         for _k, v in self.hass.data[DOMAIN].items():
             coordinator = v
             api_client = coordinator.client
         if api_client is not None:
-            api_client._data.subdomain = user_input.get("subdomain", default_subdomain)
-            api_client._data.auth_token = user_input.get("auth_token", "")
-            api_client._data.token = user_input.get("token", "")
-            api_client._data.phone_number = user_input.get("phone_number", "")
-            try:
-                valid = await api_client.async_retrieve_user_data_with_tokens(
-                    user_input.get("auth_token", ""),
-                    user_input.get("token", "")
+            new_token = user_input.get("token", "")
+            new_auth_token = user_input.get("auth_token", "")
+            new_refresh_token = user_input.get("refresh_token", "")
+            new_subdomain = user_input.get("subdomain", default_subdomain)
+            new_phone = user_input.get("phone_number", "")
+            if new_token:
+                api_client._data.token = new_token
+            if new_auth_token:
+                api_client._data.auth_token = new_auth_token
+            if new_refresh_token:
+                api_client._data.refresh_token = new_refresh_token
+            if new_subdomain:
+                api_client._data.subdomain = new_subdomain
+            if new_phone:
+                api_client._data.phone_number = new_phone
+            # Persist tokens to storage so they survive restarts
+            if new_token:
+                self.hass.async_create_task(
+                    api_client._data.async_set_stored_data_for_key("token", new_token)
                 )
-                if not valid:
-                    errors = {"token": "Unable to validate tokens. Check your auth_token and token."}
-                    return self.async_show_form(
-                        step_id="init",
-                        data_schema=options_schema,
-                        errors=errors
-                    )
-            except Exception as e:
-                errors = {"token": f"Error validating tokens: {e}"}
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=options_schema,
-                    errors=errors
+            if new_refresh_token:
+                self.hass.async_create_task(
+                    api_client._data.async_set_stored_data_for_key("refresh_token", new_refresh_token)
                 )
 
-        # All good, create entry
+        # Also update entry.data so the new tokens survive a full HA restart
+        new_data = dict(self.config_entry.data)
+        for key in ("token", "auth_token", "refresh_token", "subdomain", "phone_number"):
+            if user_input.get(key):
+                new_data[key] = user_input[key]
+        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+
         return self.async_create_entry(
             data=user_input,
             title=""

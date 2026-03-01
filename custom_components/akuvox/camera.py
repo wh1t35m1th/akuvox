@@ -4,9 +4,9 @@ from collections.abc import Callable, Awaitable
 
 from homeassistant.helpers import storage
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.const import ATTR_IDENTIFIERS, CONF_NAME, CONF_VERIFY_SSL
 from homeassistant.core import HomeAssistant
-from homeassistant.components.generic.camera import GenericCamera
+from homeassistant.components.camera import Camera, CameraEntityFeature
+from homeassistant.components.stream import create_stream
 
 from .const import DOMAIN, LOGGER, NAME, VERSION, DATA_STORAGE_KEY
 
@@ -44,38 +44,29 @@ async def async_setup_entry(hass: HomeAssistant,
     async_add_devices(entities)
     return True
 
-class AkuvoxCameraEntity(GenericCamera):
-    """Akuvox camera class."""
+
+class AkuvoxCameraEntity(Camera):
+    """Akuvox RTSP camera entity."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         name: str,
-        rtsp_url: str) -> None:
-        """Initialize the Akuvox camera class."""
+        rtsp_url: str,
+    ) -> None:
+        """Initialize the Akuvox camera."""
+        super().__init__()
         LOGGER.debug("Adding Akuvox camera '%s'", name)
         LOGGER.debug("Initial RTSP URL for camera '%s': %s", name, rtsp_url)
 
-        super().__init__(
-            hass=hass,
-            device_info={
-                ATTR_IDENTIFIERS: {(DOMAIN, name)},
-                CONF_NAME: name,
-                "stream_source": rtsp_url,
-                "limit_refetch_to_url_change": True,
-                "framerate": 2,
-                "content_type": "",
-                CONF_VERIFY_SSL: False,
-                "rtsp_transport": "udp"
-            },
-            identifier=name,
-            title=name,
-        )
-
+        self.hass = hass
         self._name = name
         self._rtsp_url = rtsp_url
+
         self._attr_unique_id = name
         self._attr_name = name
+        self._attr_supported_features = CameraEntityFeature.STREAM
+        self._attr_is_streaming = True
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, name)},
@@ -89,31 +80,37 @@ class AkuvoxCameraEntity(GenericCamera):
         store = storage.Store(self.hass, 1, DATA_STORAGE_KEY)
         device_data = await store.async_load()
         if not device_data:
-            LOGGER.error("No device data found when reloading camera data")
+            LOGGER.warning("No device data found when reloading camera data for '%s'", self._name)
             return None
         cameras_data = device_data.get("camera_data")
         if not cameras_data:
-            LOGGER.error("No camera data found in device data when reloading")
+            LOGGER.warning("No camera data found in device data when reloading for '%s'", self._name)
             return None
         return cameras_data
 
-    async def async_get_stream_source(self) -> str:
-        """Return the current stream source, updating RTSP URL if changed."""
+    async def stream_source(self) -> str | None:
+        """Return the RTSP stream source URL, updating if changed in storage."""
         cameras_data = await self._reload_camera_data()
         if cameras_data is None:
-            LOGGER.warning("Could not reload camera data to update stream source for '%s'", self._name)
             return self._rtsp_url
 
         for camera_data in cameras_data:
-            name = str(camera_data.get("name", "")).strip()
-            if name == self._name:
+            stored_name = str(camera_data.get("name", "")).strip()
+            if stored_name == self._name:
                 new_rtsp_url = str(camera_data.get("video_url", "")).strip()
                 if new_rtsp_url and new_rtsp_url != self._rtsp_url:
-                    LOGGER.debug("Updating RTSP URL for camera '%s' from '%s' to '%s'", self._name, self._rtsp_url, new_rtsp_url)
+                    LOGGER.debug(
+                        "Updating RTSP URL for camera '%s' from '%s' to '%s'",
+                        self._name, self._rtsp_url, new_rtsp_url
+                    )
                     self._rtsp_url = new_rtsp_url
-                elif not new_rtsp_url:
-                    LOGGER.debug("No RTSP URL found for camera '%s' when updating stream source", self._name)
                 return self._rtsp_url
 
-        LOGGER.warning("Camera '%s' not found in reloaded data when updating stream source", self._name)
+        LOGGER.warning("Camera '%s' not found in reloaded data", self._name)
         return self._rtsp_url
+
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None
+    ) -> bytes | None:
+        """Return a still image from the stream."""
+        return None

@@ -214,6 +214,60 @@ class AkuvoxApiClient:
             LOGGER.error("❌ Unable to initialize API. Did you login again from your device? Try logging in/adding tokens again.")
         return False
 
+    async def async_validate_tokens(self,
+                                    hass: HomeAssistant,
+                                    auth_token: str,
+                                    token: str,
+                                    phone_number: str,
+                                    subdomain: str,
+                                    country_code: str) -> bool:
+        """Validate tokens during config flow by directly calling servers_list.
+
+        Bypasses async_init_api to avoid polling, recursion, and REST server
+        fetches that are inappropriate during the config flow setup.
+        """
+        # Fetch REST server host if not already set
+        if not self._data.host:
+            if await self.async_fetch_rest_server() is False:
+                LOGGER.error("❌ Unable to fetch REST server during token validation.")
+                return False
+
+        url = f"https://gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_SERVERS_LIST}"
+        headers = {
+            "accept": "*/*",
+            "content-type": "application/json",
+            "x-auth-token": token,
+            "api-version": "6.8",
+            "x-cloud-lang": "en",
+            "user-agent": "VBell/7.20.5 (iPhone; iOS 26.1; Scale/2.00)",
+            "accept-language": "en-SG;q=1"
+        }
+        obfuscated_number = str(self.get_obfuscated_phone_number(phone_number))
+        data = json.dumps({
+            "token": token,
+            "user": obfuscated_number,
+        })
+
+        LOGGER.debug("🔑 Validating tokens via servers_list for subdomain: %s", subdomain)
+        json_data = await self._async_api_wrapper(
+            method="post",
+            url=url,
+            headers=headers,
+            data=data,
+        )
+
+        if json_data is not None:
+            LOGGER.debug("✅ Token validation successful")
+            parsed_data = json_data.get("datas", json_data) if isinstance(json_data, dict) else json_data
+            self._data.parse_sms_login_response(parsed_data)
+            if self._data.refresh_token:
+                await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
+                LOGGER.debug("✅ Refresh token captured and stored from token validation")
+            return True
+
+        LOGGER.error("❌ Token validation failed - check your tokens and subdomain.")
+        return False
+
     async def async_make_servers_list_request(self,
                                               hass: HomeAssistant,
                                               auth_token: str,
@@ -260,7 +314,9 @@ class AkuvoxApiClient:
         )
         if json_data is not None:
             LOGGER.debug("✅ Server list retrieved successfully")
-            self._data.parse_sms_login_response(json_data) # type: ignore
+            # Unwrap 'datas' if present — err_code responses return the full envelope
+            parsed_data = json_data.get("datas", json_data) if isinstance(json_data, dict) else json_data
+            self._data.parse_sms_login_response(parsed_data) # type: ignore
             
             # Store refresh token if received from servers_list
             if self._data.refresh_token:
@@ -416,13 +472,29 @@ class AkuvoxApiClient:
                     await self._data.async_set_stored_data_for_key("token", self._data.token)
                     await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
                     await self._data.async_set_stored_data_for_key(
-                        "last_token_refresh", int(asyncio.get_event_loop().time())
+                        "last_token_refresh", int(time.time())
                     )
 
                     # Update in-memory tokens immediately
                     self._data.token = token_data.get("token", self._data.token)
                     self._data.refresh_token = token_data.get("refresh_token", self._data.refresh_token)
                     LOGGER.debug("🔁 Updated in-memory tokens after successful refresh.")
+
+                    # Also persist to config entry so tokens survive HA restart
+                    try:
+                        from homeassistant.helpers import entity_registry
+                        domain_data = self.hass.data.get("akuvox", {})
+                        for entry_id, coordinator in domain_data.items():
+                            if hasattr(coordinator, 'config_entry') and coordinator.config_entry:
+                                entry = coordinator.config_entry
+                                new_options = dict(entry.options)
+                                new_options["token"] = self._data.token
+                                new_options["refresh_token"] = self._data.refresh_token
+                                self.hass.config_entries.async_update_entry(entry, options=new_options)
+                                LOGGER.debug("💾 Updated config entry options with new tokens.")
+                                break
+                    except Exception as ex:
+                        LOGGER.warning("⚠️ Could not persist tokens to config entry: %s", ex)
 
                     LOGGER.debug("💾 Stored new token pair to persistent storage:")
                     LOGGER.debug("   token = %s", self._data.token)
@@ -804,7 +876,7 @@ class AkuvoxApiClient:
     async def async_check_and_refresh_tokens(self) -> bool:
         """Check if tokens need refresh and refresh if necessary (every 6 days)."""
         last_refresh = await self._data.async_get_stored_data_for_key("last_token_refresh")
-        current_time = int(asyncio.get_event_loop().time())
+        current_time = int(time.time())
         
         # Refresh tokens every N days (configurable) - 1 day safety buffer before 7-day expiry
         refresh_interval = TOKEN_REFRESH_INTERVAL_DAYS * 24 * 60 * 60  # Convert days to seconds
