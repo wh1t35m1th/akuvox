@@ -179,39 +179,44 @@ class AkuvoxApiClient:
             subdomain=subdomain,
             country_code=country_code,
             phone_number=phone_number)
-        url = f"https://{self._data.host}/{API_SEND_SMS}".replace(".subdomain", f".{subdomain}")
-        LOGGER.debug("url = %s", url)
-        if await self.async_init_api():
-            headers = {
-                "Host": self._data.host,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-AUTH-TOKEN": "",
-                "Connection": "keep-alive",
-                "Accept": "*/*",
-                "User-Agent": "VBell/6.61.2 (iPhone; iOS 16.6; Scale/3.00)",
-                "Accept-Language": "en-AU;q=1, he-AU;q=0.9, ru-RU;q=0.8",
-                "x-cloud-lang": "en"
-            }
-            data = {
-                "AreaCode": country_code,
-                "MobileNumber": phone_number,
-                "Type": 0
-            }
-            LOGGER.debug("📡 Requesting SMS code from subdomain %s...", subdomain)
-            response = await self._async_api_wrapper(
-                method="post",
-                url=url,
-                headers=headers,
-                data=data,
-            )
-            if response is not None:
-                if response["result"] == 0: # type: ignore
-                    LOGGER.debug("✅ SMS code request successful")
-                    return True
 
-            LOGGER.error("❌ SMS code request unsuccessful. Request URL: %s", url)
-        else:
-            LOGGER.error("❌ Unable to initialize API. Did you login again from your device? Try logging in/adding tokens again.")
+        # Fetch the REST server host so it is available for device data retrieval
+        # after SMS verification. Avoids calling async_init_api() which would
+        # prematurely start polling and the token refresh scheduler.
+        if await self.async_fetch_rest_server() is False:
+            LOGGER.error("❌ Unable to fetch REST server for SMS request.")
+            return False
+
+        # Use REST_SERVER_ADDR so _async_api_wrapper handles subdomain substitution,
+        # matching the pattern used by async_validate_sms_code.
+        url = f"https://{REST_SERVER_ADDR}:{REST_SERVER_PORT}/{API_SEND_SMS}"
+        LOGGER.debug("📡 Requesting SMS code from subdomain %s... url=%s", subdomain, url)
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-AUTH-TOKEN": "",
+            "Connection": "keep-alive",
+            "Accept": "*/*",
+            "User-Agent": "VBell/6.61.2 (iPhone; iOS 16.6; Scale/3.00)",
+            "Accept-Language": "en-AU;q=1, he-AU;q=0.9, ru-RU;q=0.8",
+            "x-cloud-lang": "en"
+        }
+        data = {
+            "AreaCode": country_code,
+            "MobileNumber": phone_number,
+            "Type": 0
+        }
+        response = await self._async_api_wrapper(
+            method="post",
+            url=url,
+            headers=headers,
+            data=data,
+        )
+        if response is not None:
+            if response["result"] == 0: # type: ignore
+                LOGGER.debug("✅ SMS code request successful")
+                return True
+
+        LOGGER.error("❌ SMS code request unsuccessful. Request URL: %s", url)
         return False
 
     async def async_validate_tokens(self,

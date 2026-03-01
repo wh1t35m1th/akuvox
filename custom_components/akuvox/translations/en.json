@@ -10,8 +10,11 @@
                 }
             },
             "sms_sign_in_warning": {
-                "title": "SMS Verification",
-                "description": "⚠️ Warning ⚠️\n\nChoosing this sign-in method will log you out of the SmartPlus app on your phone.\n\nTo stay logged in to the app and use both the app and this integration, please use the `App Tokens` sign-in method instead."
+                "title": "Sign-In Method",
+                "description": "ℹ️ Note: Regardless of which sign-in method you choose, the SmartPlus mobile app will be signed out each time Home Assistant refreshes its tokens (every 6 days). Simultaneous use of the mobile app and this integration is not currently supported.\n\nHow would you like to sign in?",
+                "data": {
+                    "warning_option_selection": "Sign-in method"
+                }
             },
             "sms_sign_in": {
                 "title": "SMS Verification",
@@ -30,6 +33,7 @@
                     "phone_number": "Phone Number (without the country code)",
                     "token": "Token",
                     "auth_token": "Auth Token",
+                    "refresh_token": "Refresh Token",
                     "subdomain": "Manually set the regional API subdomain"
                 }
             },
@@ -49,7 +53,7 @@
         "step": {
             "init": {
                 "title": "SmartPlus User Tokens & Event Configuration",
-                "description": "If you signed into the SmartPlus app on your device after adding the integration, you can update your user tokens below. This will allow Home Assistant to communicate with Akuvox's servers while you remain signed in on your device.\n\nPlease refer to the documentation for instructions on how to extract your token string.",
+                "description": "Update your account tokens or settings below.\n\nℹ️ Note: Updating tokens here does not prevent the SmartPlus mobile app from being signed out. Due to Akuvox's rotating token system, the mobile app will be signed out each time Home Assistant refreshes its tokens (every 6 days).\n\nPlease refer to the documentation for instructions on how to extract your token string.",
                 "data": {
                     "country": "The country registered in your Akuvox SmartPlus account",
                     "override": "Use the following SmartLife account tokens:",
