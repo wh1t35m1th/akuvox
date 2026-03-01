@@ -1,169 +1,150 @@
 # Akuvox SmartPlus Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-![version](https://img.shields.io/github/v/release/YOUR_USERNAME/akuvox)
-[![Community Forum][forum-shield]][forum]
+![version](https://img.shields.io/github/v/release/wh1t35m1th/akuvox)
 
-<img src="https://user-images.githubusercontent.com/1849295/269948645-08c99fe2-253e-49cc-b38b-2a2937c2726d.png" width="100">
+Integrate your Akuvox SmartPlus intercom system with Home Assistant. Access live door camera feeds, trigger door relays remotely, receive instant event notifications with camera snapshots, and monitor temporary access keys — all from your Home Assistant dashboard.
 
-Integrate your Akuvox SmartPlus intercom system with Home Assistant. Access door camera feeds, trigger door relays remotely, receive instant notifications with camera snapshots, and manage temporary access keys—all from your Home Assistant dashboard.
-
-**⚠️ Important Note:** This repository is a personal fork of the [original project](https://github.com/nimroddolev/akuvox). It is maintained independently with enhanced features and improvements, and there is no intention to merge changes upstream.
+> **Note:** This is a personal fork of the [original project](https://github.com/nimroddolev/akuvox), maintained independently with significant improvements. There is no intention to merge changes upstream.
 
 ---
 
-## ✨ Features
+## Features
 
-### 🎥 Door Camera Integration
-- Live RTSP camera feeds for all your Akuvox door stations
-- Automatic camera entity creation for each intercom device
-- Real-time video streaming integration with Home Assistant
+### Camera Integration
+- Live video streaming for all Akuvox door station cameras
+- Streams are routed through Home Assistant's built-in **go2rtc** relay for compatibility
+- Akuvox RTSP streams use UDP transport; go2rtc handles the protocol negotiation so HA's ffmpeg pipeline works correctly
 
-### 🚪 Remote Door Control
-- Open doors remotely via Home Assistant buttons
-- Support for multiple relays per door
-- Quick access from dashboards, automations, or mobile app
+### Door Control
+- Open doors remotely via Home Assistant button entities
+- Each door relay appears as a separate button entity
+- Usable from dashboards, automations, or the mobile app
 
-### 🔔 Smart Event Notifications
-- Real-time door events (calls, unlocks, face recognition)
-- Automatic camera snapshot capture when events occur
-- Intelligent retry mechanism ensures snapshots are included in notifications
-- Events fire as `akuvox_door_update` with rich metadata
+### Door Event Notifications
+- Real-time door events fired as `akuvox_door_update` on the HA event bus
+- Events include: door calls, SmartPlus unlocks, face recognition unlocks
+- Snapshots are attached to events (with configurable wait for image availability)
+- A **Last Door Event** sensor entity tracks the most recent event with full metadata, and persists across HA restarts
 
-### 🔑 Temporary Access Key Management
-- View all temporary access keys from Home Assistant
-- Monitor key expiration and usage
-- Track which doors each key can access
+### Temporary Access Keys
+- All temporary access keys from your Akuvox account appear as sensor entities
+- Shows key status (active/expired), begin/end times, allowed uses, and QR code URL
 
-### 🔄 Automatic Token Refresh
-- Tokens automatically refresh every 6 days
-- No manual token management required
-- Seamless authentication handling
-
----
-
-## 🎯 Enhanced Features in This Fork
-
-This fork includes several improvements over the original project:
-
-### 🚀 Performance & Reliability
-- **Smart Camera Snapshot Handling**: Intelligent retry mechanism with dynamic wait times (0.5s intervals, up to 5s max) ensures camera snapshots are captured before notifications are sent
-- **Duplicate Event Prevention**: Async lock prevents duplicate event processing during concurrent API calls
-- **Improved Token Management**: Enhanced token refresh logic with better error handling and logging
-- **Better Logging**: Comprehensive debug logs with clear emoji indicators for easier troubleshooting
-
-### 🔧 Technical Improvements
-- Token persistence and automatic refresh on Home Assistant restart
-- Graceful handling of missing camera URLs with configurable timeouts
-- Optimized polling mechanism to reduce API calls
-- Better error handling throughout the codebase
+### Token Management
+- Tokens auto-refresh every 6 days (1 day before the 7-day expiry)
+- A **Token** diagnostic sensor shows the currently active API token (masked)
+- Manual token update available via HA service call or integration reconfiguration
 
 ---
 
-## 📋 Requirements
+## Requirements
 
-- Home Assistant 2023.3.0 or newer
+- Home Assistant 2023.3.0 or newer (go2rtc must be enabled — it is included by default in recent HA versions)
 - Akuvox SmartPlus account with registered devices
 - Network access to Akuvox cloud services
 
 ---
 
-## 🔧 Installation
+## Installation
 
 ### Via HACS (Recommended)
 
 1. Ensure [HACS](https://hacs.xyz/) is installed
-2. Add this repository as a custom repository in HACS:
-   - Go to HACS → Integrations
-   - Click the three dots menu (top right) → Custom repositories
-   - Add repository URL: `https://github.com/wh1t35m1th/akuvox`
-   - Category: Integration
-3. Click "Install" on the Akuvox SmartPlus integration
-4. Restart Home Assistant
+2. Go to **HACS → Integrations → ⋮ → Custom repositories**
+3. Add repository URL: `https://github.com/wh1t35m1th/akuvox`, category: **Integration**
+4. Click **Install** on the Akuvox SmartPlus integration
+5. Restart Home Assistant
 
 ### Manual Installation
 
 1. Download the latest release from the [releases page](https://github.com/wh1t35m1th/akuvox/releases)
-2. Extract the `custom_components/akuvox` folder
-3. Copy it to your Home Assistant `custom_components` directory
-4. Restart Home Assistant
+2. Copy the `custom_components/akuvox` folder to your HA `custom_components` directory
+3. Restart Home Assistant
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Initial Setup
 
-1. Go to **Settings → Devices & Services**
-2. Click **Add Integration**
-3. Search for "Akuvox SmartPlus"
-4. Choose your sign-in method:
+1. Go to **Settings → Devices & Services → Add Integration**
+2. Search for **Akuvox SmartPlus**
+3. Choose a sign-in method:
 
 #### Method 1: SMS Verification (Recommended)
 - Enter your country and phone number
-- Receive and enter the SMS verification code
-- ⚠️ **Note**: This will sign you out of the SmartPlus mobile app
+- Enter the SMS verification code sent to your phone
+- **Note:** This will sign you out of the SmartPlus mobile app
 
 #### Method 2: App Tokens (Advanced)
-- Allows you to stay signed in on your mobile device
-- Requires extracting tokens from the SmartPlus app
-- See [Token Extraction Guide](#finding-your-smartplus-account-tokens) below
-
-### Optional Configuration
-
-After setup, you can configure additional options:
-
-- **Token Management**: Update tokens if you re-login on your mobile device
-- **Event Behavior**: Choose whether to wait for camera snapshots before firing events
-- **Regional Settings**: Manually set API subdomain if auto-detection fails
+- Lets you stay signed in on your mobile device simultaneously
+- Requires extracting tokens from the SmartPlus app using a proxy tool (e.g. mitmproxy)
+- See [REFRESH_TOKEN_GUIDE.md](REFRESH_TOKEN_GUIDE.md) for extraction steps
 
 ---
 
-## 📱 Using the Integration
+## Entities
 
-### Door Events & Notifications
+| Entity | Type | Description |
+|--------|------|-------------|
+| `camera.<door_name>` | Camera | Live RTSP stream via go2rtc |
+| `button.<door_name>_relay_<n>` | Button | Open a door relay |
+| `sensor.<key_description>_<id>` | Sensor | Temporary access key status |
+| `sensor.akuvox_last_door_event` | Sensor | Most recent door event timestamp and metadata |
+| `sensor.akuvox_token` | Sensor (diagnostic) | Currently active API token (masked) |
 
-The integration fires `akuvox_door_update` events with the following data:
+---
+
+## Door Events
+
+The integration fires `akuvox_door_update` events on the HA event bus:
 
 ```yaml
 trigger.event.data:
-  Location: "Front Door"          # Door name
-  CaptureType: "Call"              # Event type: Call, SmartPlus Unlock, Face Unlock
-  Initiator: "John Smith"          # Person who triggered event
-  PicUrl: "https://..."            # Camera snapshot URL
-  CaptureTime: "05-12-2025 14:30:15"
-  MAC: "0C11052B2C6F"              # Device MAC address
-  Relay: "1"                       # Relay number used
+  Location: "Front Door"               # Door name
+  CaptureType: "Call"                  # Call / SmartPlus Unlock / Face Unlock
+  Initiator: "John Smith"              # Person who triggered the event
+  PicUrl: "https://..."                # Camera snapshot URL
+  CaptureTime: "05-12-2025 14:30:15"  # Event timestamp
+  MAC: "0C11052B2C6F"                  # Device MAC address
+  Relay: "1"                           # Relay number used
 ```
 
-### Example Automation: Door Ring Notification
+The `sensor.akuvox_last_door_event` entity exposes these same fields as attributes and pre-populates on HA restart from the last stored event.
+
+---
+
+## Example Automations
+
+### Door Ring Notification
 
 ```yaml
 alias: Front Door Ring Alert
 triggers:
-  - event_type: akuvox_door_update
+  - trigger: event
+    event_type: akuvox_door_update
     event_data:
       CaptureType: Call
       Location: "Front Door"
-    trigger: event
 actions:
   - action: notify.mobile_app
     data:
-      title: "🔔 Someone at Front Door"
+      title: "Someone at Front Door"
       message: "{{ trigger.event.data.Initiator }} is calling"
       data:
         image: "{{ trigger.event.data.PicUrl }}"
         actions:
-          - action: "OPEN_DOOR"
+          - action: OPEN_DOOR
             title: "Open Door"
 ```
 
-### Example Automation: Open Door from Notification
+### Open Door from Notification
 
 ```yaml
 alias: Handle Door Open Action
 triggers:
-  - platform: event
+  - trigger: event
     event_type: mobile_app_notification_action
     event_data:
       action: OPEN_DOOR
@@ -175,93 +156,60 @@ actions:
 
 ---
 
-## 🎨 Dashboard Examples
+## Dashboard Example
 
-### Camera Card
 ```yaml
 type: picture-glance
-title: Front Door Camera
+title: Front Door
 camera_image: camera.front_door
 entities:
   - button.front_door_relay_1
 ```
 
-### Event History Card
+---
+
+## Services
+
+### `akuvox.update_tokens`
+Manually update the API tokens without reconfiguring the integration.
+
 ```yaml
-type: logbook
-entities:
-  - sensor.front_door_temp_key
-hours_to_show: 24
+service: akuvox.update_tokens
+data:
+  entry_id: "your_config_entry_id"
+  token: "new_token_value"
+  refresh_token: "new_refresh_token_value"  # optional
+```
+
+### `akuvox.refresh_tokens`
+Trigger an immediate token refresh using the stored refresh token.
+
+```yaml
+service: akuvox.refresh_tokens
+data:
+  entry_id: "your_config_entry_id"
 ```
 
 ---
 
-## 🔑 Finding Your SmartPlus Account Tokens
+## Troubleshooting
 
-To use the App Tokens sign-in method and stay logged in on your mobile device:
+### Camera feeds not loading
+- Ensure go2rtc is active (it is bundled with recent Home Assistant versions)
+- Check that your HA server can reach the camera's IP on port 554 (UDP)
+- Enable debug logging and look for `go2rtc registration` log lines
 
-### Requirements
-- Computer with mitmproxy installed
-- SmartPlus mobile app
-- Both devices on the same WiFi network
+### Notifications without images
+- Camera snapshots may take 1–3 seconds to become available
+- The integration waits up to 5 seconds before firing the event
+- Adjust this behaviour in the integration's **Configure** options
 
-### Steps
+### Token expired errors
+- Tokens auto-refresh every 6 days; check HA logs for refresh errors
+- Use **Settings → Devices & Services → Akuvox SmartPlus → Configure** to update tokens manually
+- Or call the `akuvox.update_tokens` service
 
-1. **Install mitmproxy**:
-   ```bash
-   pip install mitmproxy
-   ```
-
-2. **Start mitmproxy**:
-   ```bash
-   mitmweb --listen-port 8080 --web-port 8081
-   ```
-
-3. **Configure your phone**:
-   - Set WiFi proxy to your computer's IP address, port 8080
-   - Install mitmproxy certificate on your phone
-
-4. **Capture tokens**:
-   - Log out of SmartPlus app completely
-   - Clear app cache/data or reinstall
-   - Log back in to SmartPlus
-   - Open mitmproxy web interface at `http://localhost:8081`
-
-5. **Find tokens**:
-   - Look for requests to `gate.*.akuvox.com:8600`
-   - Find `sms_login` or `servers_list` response
-   - Extract `token`, `auth_token`, and optionally `refresh_token`
-
-See [REFRESH_TOKEN_GUIDE.md](REFRESH_TOKEN_GUIDE.md) for detailed instructions.
-
----
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-**Camera feeds not loading**
-- Check that your RTSP port (554) is not blocked by your firewall
-- Verify camera passwords in the integration logs
-- Try reloading the integration
-
-**Notifications without images**
-- Camera snapshots may take 1-3 seconds to generate
-- Current configuration waits up to 5 seconds for snapshots
-- Adjust timeout in integration options if needed
-
-**Token expired errors**
-- Tokens should auto-refresh every 6 days
-- If issues persist, manually update tokens in integration options
-- Check Home Assistant logs for refresh errors
-
-**Duplicate notifications**
-- Ensure automation mode is set to `parallel` or `queued`
-- Check for multiple automations triggering on the same event
-
-### Debug Logging
-
-Enable debug logging to troubleshoot issues:
+### Enable Debug Logging
 
 ```yaml
 logger:
@@ -272,33 +220,23 @@ logger:
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Original integration by [@nimroddolev](https://github.com/nimroddolev/akuvox)
 - Based on the [integration_blueprint](https://github.com/ludeeus/integration_blueprint) template
-- Thanks to the Home Assistant community for their support
 
 ---
 
-## ⚠️ Disclaimer
+## Disclaimer
 
-This integration is not affiliated with or endorsed by Akuvox. It is a community-contributed project provided as-is without any warranty or guarantee. Use it at your own discretion and responsibility.
-
----
-
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=popout
-[forum]: https://community.home-assistant.io/t/akuvox-smartplus-view-door-camera-feeds-open-doors-and-manage-temporary-keys/623187
-
-## 📞 Support
-
-- [Home Assistant Community Forum Thread][forum]
-- [GitHub Issues](https://github.com/wh1t35m1th/akuvox/issues)
-- [Documentation](https://github.com/wh1t35m1th/akuvox/wiki)
+This integration is not affiliated with or endorsed by Akuvox. It is a community project provided as-is without warranty. Use at your own discretion.
 
 ---
+
+[Community Forum](https://community.home-assistant.io/t/akuvox-smartplus-view-door-camera-feeds-open-doors-and-manage-temporary-keys/623187) · [GitHub Issues](https://github.com/wh1t35m1th/akuvox/issues)

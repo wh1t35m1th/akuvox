@@ -1,8 +1,10 @@
 """Camera platform for akuvox."""
 
 from collections.abc import Callable, Awaitable
+from urllib.parse import urlparse
 
 from homeassistant.helpers import storage
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.core import HomeAssistant
 from homeassistant.components.camera import Camera, CameraEntityFeature
@@ -10,7 +12,10 @@ from homeassistant.components.camera import Camera, CameraEntityFeature
 from .const import DOMAIN, LOGGER, NAME, VERSION, DATA_STORAGE_KEY
 
 GO2RTC_KEY = "go2rtc"
-GO2RTC_RTSP_PORT = 1984
+# Standard go2rtc ports — HA offsets these by +10000 (API: 11984, RTSP: 18554)
+_GO2RTC_STD_API_PORT = 1984
+_GO2RTC_STD_RTSP_PORT = 8554
+_GO2RTC_PORT_OFFSET = _GO2RTC_STD_RTSP_PORT - _GO2RTC_STD_API_PORT  # 6570
 
 
 async def async_setup_entry(hass: HomeAssistant,
@@ -59,17 +64,18 @@ class AkuvoxCameraEntity(Camera):
         """Initialize the Akuvox camera."""
         super().__init__()
         LOGGER.debug("Adding Akuvox camera '%s'", name)
-        LOGGER.debug("Initial RTSP URL for camera '%s': %s", name, rtsp_url)
 
         self.hass = hass
         self._name = name
         self._rtsp_url = rtsp_url
+        self._go2rtc_stream_id: str | None = None
+        self._go2rtc_host = "127.0.0.1"
+        self._go2rtc_rtsp_port = _GO2RTC_STD_RTSP_PORT
 
         self._attr_unique_id = name
         self._attr_name = name
         self._attr_supported_features = CameraEntityFeature.STREAM
         self._attr_is_streaming = True
-        self.stream_options = {"rtsp_transport": "tcp"}
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, name)},
@@ -77,6 +83,81 @@ class AkuvoxCameraEntity(Camera):
             model=VERSION,
             manufacturer=NAME,
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Register stream with go2rtc when entity is added."""
+        await super().async_added_to_hass()
+        await self._register_go2rtc()
+
+    async def _register_go2rtc(self) -> None:
+        """Register the RTSP stream with go2rtc's REST API using TCP transport."""
+        go2rtc_config = self.hass.data.get(GO2RTC_KEY)
+        if go2rtc_config is None:
+            LOGGER.warning(
+                "go2rtc not found in hass.data — camera '%s' will use direct RTSP",
+                self._name,
+            )
+            return
+
+        # Go2RtcConfig exposes 'url' (e.g. http://localhost:11984/) and 'session'
+        base_url = getattr(go2rtc_config, "url", None)
+        session = getattr(go2rtc_config, "session", None)
+
+        if not base_url:
+            LOGGER.warning("go2rtc config has no URL — camera '%s' will use direct RTSP", self._name)
+            return
+
+        # Derive the RTSP port from the API port using the standard offset
+        # Standard: API=1984, RTSP=8554, offset=6570
+        # HA's built-in go2rtc: API=11984, RTSP=18554
+        parsed = urlparse(base_url)
+        api_port = parsed.port or _GO2RTC_STD_API_PORT
+        rtsp_host = parsed.hostname or "127.0.0.1"
+        rtsp_port = api_port + _GO2RTC_PORT_OFFSET
+
+        stream_id = self.entity_id
+        # Force UDP via #transport=udp — go2rtc defaults to TCP, but Akuvox only
+        # echoes client_port correctly for UDP SETUP. TCP causes empty client_port=
+        # in the server response, which go2rtc rejects.
+        source_url = f"{self._rtsp_url}#transport=udp"
+        api_url = f"{base_url.rstrip('/')}/api/streams"
+
+        LOGGER.debug(
+            "Registering '%s' with go2rtc: api=%s rtsp=%s:%d stream_id='%s'",
+            self._name, api_url, rtsp_host, rtsp_port, stream_id,
+        )
+
+        try:
+            if session is None:
+                session = async_get_clientsession(self.hass)
+            async with session.put(
+                api_url,
+                params={"name": stream_id, "src": source_url},
+            ) as resp:
+                body = await resp.text()
+                LOGGER.debug(
+                    "go2rtc API response for '%s': status=%d body=%s",
+                    self._name, resp.status, body,
+                )
+                if resp.status not in (200, 204):
+                    LOGGER.warning(
+                        "go2rtc API returned %d for camera '%s': %s",
+                        resp.status, self._name, body,
+                    )
+                    return
+
+            self._go2rtc_stream_id = stream_id
+            self._go2rtc_host = rtsp_host
+            self._go2rtc_rtsp_port = rtsp_port
+            LOGGER.debug(
+                "go2rtc registration OK for '%s' → rtsp://%s:%d/%s",
+                self._name, rtsp_host, rtsp_port, stream_id,
+            )
+        except Exception as err:
+            LOGGER.warning(
+                "go2rtc registration failed for camera '%s': %s — falling back to direct RTSP",
+                self._name, err,
+            )
 
     async def _reload_camera_data(self):
         """Reload camera data from storage."""
@@ -92,7 +173,19 @@ class AkuvoxCameraEntity(Camera):
         return cameras_data
 
     async def stream_source(self) -> str | None:
-        """Return the RTSP stream source URL, updating if changed in storage."""
+        """Return the stream source URL.
+
+        Routes through go2rtc when registered, so ffmpeg receives a clean
+        re-served RTSP stream instead of connecting directly to the Akuvox
+        server (which produces 'Invalid data found when processing input').
+        """
+        if self._go2rtc_stream_id:
+            url = f"rtsp://{self._go2rtc_host}:{self._go2rtc_rtsp_port}/{self._go2rtc_stream_id}"
+            LOGGER.debug("stream_source for '%s': go2rtc relay → %s", self._name, url)
+            return url
+
+        # Fallback: direct RTSP (reload URL from storage in case it changed)
+        LOGGER.debug("stream_source for '%s': direct RTSP fallback", self._name)
         cameras_data = await self._reload_camera_data()
         if cameras_data is None:
             return self._rtsp_url
