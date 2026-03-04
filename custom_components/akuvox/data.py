@@ -296,7 +296,14 @@ class AkuvoxData:
             latest_door_log = await self.async_get_stored_data_for_key("latest_door_log")
             
             # Check if this is a new event
-            if latest_door_log is not None and CAPTURE_TIME_KEY in latest_door_log:
+            if latest_door_log is None:
+                # No baseline yet (first run after install or storage wipe).
+                # Store current entry as the baseline without firing an event,
+                # so we don't replay old historical entries as new notifications.
+                LOGGER.debug("No baseline door log found — storing current entry as baseline without firing event")
+                await self.async_set_stored_data_for_key("latest_door_log", new_door_log)
+                return None
+            if CAPTURE_TIME_KEY in latest_door_log:
                 if new_door_log is not None and CAPTURE_TIME_KEY in new_door_log:
                     # Ignore if it's the same event
                     if str(latest_door_log[CAPTURE_TIME_KEY]) == str(new_door_log[CAPTURE_TIME_KEY]):

@@ -52,7 +52,9 @@ class AkuvoxDataUpdateCoordinator(DataUpdateCoordinator):
                 if data is not None:
                     LOGGER.debug("Saving user's data to local storage")
                     store = storage.Store(self.hass, 1, DATA_STORAGE_KEY)
-                    await store.async_save(data)
+                    existing = await store.async_load() or {}
+                    existing.update(data)
+                    await store.async_save(existing)
 
         except AkuvoxApiClientAuthenticationError as exception:
             raise ConfigEntryAuthFailed(exception) from exception
