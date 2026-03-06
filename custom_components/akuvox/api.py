@@ -642,7 +642,9 @@ class AkuvoxApiClient:
                     LOGGER.debug("🚪 New door open event occurred. Firing akuvox_door_update event")
                     event_name = "akuvox_door_update"
                     self.hass.bus.async_fire(event_name, new_door_log)
-            await asyncio.sleep(2)  # Wait for 2 seconds before calling again
+            # Back off when failing: 2s normally, up to 5min on repeated failures
+            sleep_interval = 2 if self._failed_attempts == 0 else min(30 * self._failed_attempts, 300)
+            await asyncio.sleep(sleep_interval)
 
     async def async_get_personal_door_log(self):
         """Request the user's personal door log data."""
@@ -684,7 +686,7 @@ class AkuvoxApiClient:
         
         if self._failed_attempts == 0:
             LOGGER.warning("❌ Unable to retrieve user's personal door log")
-            self._failed_attempts = 1
+        self._failed_attempts += 1
 
         return None
 
