@@ -187,9 +187,7 @@ class AkuvoxApiClient:
             LOGGER.error("❌ Unable to fetch REST server for SMS request.")
             return False
 
-        # Use REST_SERVER_ADDR so _async_api_wrapper handles subdomain substitution,
-        # matching the pattern used by async_validate_sms_code.
-        url = f"https://{REST_SERVER_ADDR}:{REST_SERVER_PORT}/{API_SEND_SMS}"
+        url = f"https://{self._data.host}/{API_SEND_SMS}"
         LOGGER.debug("📡 Requesting SMS code from subdomain %s... url=%s", subdomain, url)
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -322,12 +320,12 @@ class AkuvoxApiClient:
             # Unwrap 'datas' if present — err_code responses return the full envelope
             parsed_data = json_data.get("datas", json_data) if isinstance(json_data, dict) else json_data
             self._data.parse_sms_login_response(parsed_data) # type: ignore
-            
+
             # Store refresh token if received from servers_list
             if self._data.refresh_token:
                 await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
                 LOGGER.debug("✅ Refresh token captured and stored from servers_list")
-                
+
             return True
 
         LOGGER.error("❌ Unable to retrieve server list. Try sigining in again / check that your tokens are valid.")
@@ -683,7 +681,7 @@ class AkuvoxApiClient:
         # Only log first failure to avoid spam
         if self._last_successful_app_type:
             self._data.app_type = self._last_successful_app_type
-        
+
         if self._failed_attempts == 0:
             LOGGER.warning("❌ Unable to retrieve user's personal door log")
         self._failed_attempts += 1
@@ -765,12 +763,12 @@ class AkuvoxApiClient:
                             return json_data["data"]
                         return json_data
                     return []
-                
+
                 # Refresh token or newer API pattern
                 if "err_code" in json_data and str(json_data["err_code"]) == "0":
                     return json_data
                 LOGGER.warning("🤨 Response: %s", str(json_data))
-                
+
             except Exception as error:
                 LOGGER.error("❌ Error occurred when parsing JSON: %s\nRequest: %s",
                              error,
@@ -855,7 +853,7 @@ class AkuvoxApiClient:
             # Add 3 to the digit and take the result modulo 10
             transformed_digit = (digit + 3) % 10
             transformed_str += str(transformed_digit)
-        return int(transformed_str)
+        return transformed_str
 
     def get_activities_host(self):
         """Get the host address string for activities API requests."""
@@ -884,15 +882,15 @@ class AkuvoxApiClient:
         """Check if tokens need refresh and refresh if necessary (every 6 days)."""
         last_refresh = await self._data.async_get_stored_data_for_key("last_token_refresh")
         current_time = int(time.time())
-        
+
         # Refresh tokens every N days (configurable) - 1 day safety buffer before 7-day expiry
         refresh_interval = TOKEN_REFRESH_INTERVAL_DAYS * 24 * 60 * 60  # Convert days to seconds
-        
+
         if last_refresh is None or (current_time - last_refresh) >= refresh_interval:
-            LOGGER.debug("🔄 Token refresh needed (last refresh: %s)", 
+            LOGGER.debug("🔄 Token refresh needed (last refresh: %s)",
                         last_refresh if last_refresh else "never")
             return await self.async_refresh_token()
-        
+
         time_until_refresh = refresh_interval - (current_time - last_refresh)
         days_until_refresh = time_until_refresh // (24 * 60 * 60)
         LOGGER.debug("✅ Tokens are fresh (refresh in %d days)", days_until_refresh)
