@@ -853,7 +853,7 @@ class AkuvoxApiClient:
             # Add 3 to the digit and take the result modulo 10
             transformed_digit = (digit + 3) % 10
             transformed_str += str(transformed_digit)
-        return int(transformed_str)
+        return transformed_str
 
     def get_activities_host(self):
         """Get the host address string for activities API requests."""
